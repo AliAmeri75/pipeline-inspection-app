@@ -31,18 +31,6 @@ repairs, and whether the leak and burst safety criteria are satisfied. It also
 plots the cost comparison and annual leak/burst probabilities for the selected
 schedule.
 
-## Editing this introduction
-
-The text on this page is intentionally separated from the Python calculations:
-
-- Edit `content/ABSTRACT.md` to replace or extend the short abstract.
-- Edit `content/DOCUMENTATION.md` to revise the explanation, workflow, outputs,
-  publications, acknowledgements, or references.
-- Replace files in `assets/` to update photographs or the institutional logo.
-
-Markdown headings, paragraphs, numbered lists, bullet lists, links, and equations
-can be added without changing `introduction.py`.
-
 ## Scope and limitations
 
 The current optimization compares only the candidate fixed intervals supplied
