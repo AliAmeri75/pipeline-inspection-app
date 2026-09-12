@@ -9,6 +9,22 @@ On macOS, double-click `run_app.command`. On Windows, double-click
 `run_app.bat`. The first start creates a private Python environment and installs
 the packages in `requirements.txt`.
 
+The application opens on a separate **Introduction** page. Use the navigation
+menu to open **Inspection scheduling**.
+
+## Edit the introduction page
+
+- Edit `content/ABSTRACT.md` to change the short abstract.
+- Edit `content/DOCUMENTATION.md` to change the explanation and documentation.
+- Replace the files in `assets/` to update the two portraits or university logo.
+
+The scheduling calculations remain in `inspection_planner.py`. The small
+`streamlit_app.py` file only configures the two-page navigation, so the
+Streamlit Community Cloud entry point remains unchanged.
+
+See [`docs/INTRODUCTION_PAGE_SETUP.md`](docs/INTRODUCTION_PAGE_SETUP.md) for the
+step-by-step implementation and editing workflow.
+
 ## Joint/crack CSV
 
 Use one row for each unique joint or statistically identical joint group:
