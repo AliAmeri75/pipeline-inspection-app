@@ -136,7 +136,7 @@ st.markdown(
       </article>
       <article class="person-card">
         <img src="{yong}" alt="Yong Li">
-        <div><h3>Yong Li</h3><p>Supervisor and co-developer<br>University of Alberta</p></div>
+        <div><h3>Yong Li</h3><p>Associate Professor and co-developer<br>University of Alberta</p></div>
       </article>
     </section>
     """,
