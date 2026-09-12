@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 190" role="img" aria-labelledby="title description">
+  <title id="title">Inline inspection tool inside a pipeline</title>
+  <desc id="description">A stylized pipeline cutaway containing an inline inspection tool and sensor signals.</desc>
+  <defs>
+    <linearGradient id="pipe" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#dfe9e2"/>
+      <stop offset="0.55" stop-color="#9eb5a5"/>
+      <stop offset="1" stop-color="#718c79"/>
+    </linearGradient>
+    <linearGradient id="tool" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffdb05"/>
+      <stop offset="1" stop-color="#f2aa00"/>
+    </linearGradient>
+  </defs>
+  <path d="M40 42h322c20 0 36 16 36 36v34c0 20-16 36-36 36H40C20 148 4 132 4 112V78c0-20 16-36 36-36Z" fill="url(#pipe)" stroke="#eaf2ec" stroke-width="8"/>
+  <path d="M39 66h323c8 0 14 6 14 14v30c0 8-6 14-14 14H39c-8 0-14-6-14-14V80c0-8 6-14 14-14Z" fill="#173c28"/>
+  <ellipse cx="39" cy="95" rx="23" ry="41" fill="#b7c8bc" stroke="#eff6f0" stroke-width="5"/>
+  <ellipse cx="39" cy="95" rx="13" ry="28" fill="#214f34"/>
+  <ellipse cx="362" cy="95" rx="27" ry="41" fill="#829c8a" stroke="#eff6f0" stroke-width="5"/>
+  <ellipse cx="362" cy="95" rx="14" ry="28" fill="#214f34"/>
+  <g transform="translate(118 53)">
+    <circle cx="29" cy="42" r="36" fill="#f8c800" stroke="#fff5b0" stroke-width="4"/>
+    <circle cx="29" cy="42" r="15" fill="#275d38" stroke="#fff" stroke-width="4"/>
+    <rect x="28" y="23" width="102" height="38" rx="12" fill="url(#tool)" stroke="#fff5b0" stroke-width="4"/>
+    <rect x="69" y="28" width="30" height="28" rx="6" fill="#275d38"/>
+    <path d="M78 37h12M78 43h12M78 49h12" stroke="#ffdb05" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="132" cy="42" r="31" fill="#f8c800" stroke="#fff5b0" stroke-width="4"/>
+    <circle cx="132" cy="42" r="12" fill="#275d38" stroke="#fff" stroke-width="4"/>
+    <path d="M9 12 1 1M49 12 57 1M9 72 1 83M49 72 57 83M112 16 104 5M152 16 160 5M112 68 104 79M152 68 160 79" stroke="#ffdb05" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <g fill="none" stroke="#ffdb05" stroke-width="4" stroke-linecap="round" opacity=".95">
+    <path d="M289 76c11 10 11 28 0 38"/>
+    <path d="M303 66c19 17 19 41 0 58"/>
+    <path d="M317 57c26 23 26 53 0 76"/>
+  </g>
+</svg>

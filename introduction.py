@@ -33,6 +33,7 @@ def editable_markdown(filename: str, fallback: str) -> str:
 logo = data_uri(ASSET_DIR / "university_of_alberta_logo.svg")
 mohammadali = data_uri(ASSET_DIR / "mohammadali_ameri.png")
 yong = data_uri(ASSET_DIR / "yong_li.png")
+ili_illustration = data_uri(ASSET_DIR / "ili_pipeline.svg")
 
 st.markdown(
     """
@@ -77,12 +78,39 @@ st.markdown(
     .person-card p { color: var(--muted); margin: 0; font-size: .9rem; line-height: 1.35; }
     .section-label { color: var(--ua-green); font-size: .78rem; font-weight: 800;
         letter-spacing: .1em; text-transform: uppercase; margin-top: 1.4rem; }
+    .planner-cta {
+        display: grid; grid-template-columns: 86px minmax(0, 1fr) 260px;
+        align-items: center; gap: 1.25rem; margin: 1.45rem 0 1.2rem;
+        padding: 1.15rem 1.3rem; color: white !important; text-decoration: none !important;
+        background: linear-gradient(120deg, #1f4d30 0%, var(--ua-green) 58%, #173d27 100%);
+        border: 3px solid var(--ua-gold); border-radius: 18px;
+        box-shadow: 0 14px 30px rgba(20, 49, 32, .2);
+        transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .planner-cta:hover { transform: translateY(-3px); box-shadow: 0 18px 38px rgba(20, 49, 32, .28); }
+    .calendar-icon {
+        display: grid; place-items: center; width: 76px; height: 76px;
+        color: var(--ua-green); background: var(--ua-gold); border-radius: 18px;
+        box-shadow: inset 0 0 0 3px rgba(255,255,255,.55);
+    }
+    .calendar-icon svg { width: 46px; height: 46px; }
+    .cta-kicker { display: block; color: #fff3a1; font-size: .76rem; font-weight: 900;
+        letter-spacing: .12em; text-transform: uppercase; margin-bottom: .18rem; }
+    .cta-title { display: block; color: white; font-size: clamp(1.25rem, 2.5vw, 1.72rem);
+        font-weight: 900; line-height: 1.13; }
+    .cta-detail { display: block; color: #e2eee5; font-size: .92rem; margin-top: .36rem; }
+    .cta-arrow { color: var(--ua-gold); font-size: 1.35em; padding-left: .25rem; }
+    .ili-picture { width: 100%; max-height: 118px; object-fit: contain; }
     .research-note { margin-top: 1.7rem; padding: .9rem 1rem; background: #eef4ef;
         border-left: 4px solid var(--ua-green); color: #405047; border-radius: 6px; }
     @media (max-width: 700px) {
         .people-grid { grid-template-columns: 1fr; }
         .person-card img { width: 86px; height: 86px; flex-basis: 86px; }
         .brand-hero { padding: 1.2rem; }
+        .planner-cta { grid-template-columns: 64px minmax(0, 1fr); gap: .85rem; padding: 1rem; }
+        .calendar-icon { width: 58px; height: 58px; border-radius: 14px; }
+        .calendar-icon svg { width: 34px; height: 34px; }
+        .ili-picture { grid-column: 1 / -1; max-height: 90px; }
     }
     </style>
     """,
@@ -115,19 +143,35 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.markdown(
+    f"""
+    <a class="planner-cta" href="inspection_planner" target="_self"
+       aria-label="Open the inspection scheduling application">
+      <span class="calendar-icon" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="7" y="10" width="34" height="31" rx="5" fill="white" stroke="currentColor" stroke-width="3"/>
+          <path d="M7 19h34M16 6v8M32 6v8" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="m16 30 5 5 11-12" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span>
+        <span class="cta-kicker">Start your analysis</span>
+        <strong class="cta-title">Open the Inspection Scheduling App<span class="cta-arrow">→</span></strong>
+        <span class="cta-detail">Define the pipe joints, compare inspection intervals, and review the results.</span>
+      </span>
+      <img class="ili-picture" src="{ili_illustration}"
+           alt="Illustration of an inline inspection tool inside a pipeline">
+    </a>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.markdown('<div class="section-label">Project abstract</div>', unsafe_allow_html=True)
 st.markdown(
     editable_markdown(
         "ABSTRACT.md",
         "Add the project abstract in `content/ABSTRACT.md`.",
     )
-)
-
-st.page_link(
-    "inspection_planner.py",
-    label="Open the inspection scheduling tool",
-    icon=":material/arrow_forward:",
-    use_container_width=True,
 )
 
 st.divider()
