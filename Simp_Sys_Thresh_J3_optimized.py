@@ -105,6 +105,9 @@ DEFAULT_PROPERTY_SPECS = {
     )
 }
 BURST_VARIABLE_NAMES = ["FL", "FD", "WT", "SMYS", "SMTS", "CVN", "E"]
+ILI_DECISION_MODE = "ili"
+EXCAVATION_DECISION_MODE = "excavation"
+DECISION_MODES = {ILI_DECISION_MODE, EXCAVATION_DECISION_MODE}
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +308,7 @@ def POD(depth, q_pod):
 def simulate_cracks_vectorized(
     d0, l0, action, dt, gs, rep1_joint, rep2_joint, life, df,
     Neq, C, dS, m, wt, Di, Qsf, Fsf, Mv,
-    resample_growth_each_step=True,
+    resample_growth_each_step=True, reset_recoat_depth=True,
 ):
     """Grow every active crack in one Monte Carlo joint realization."""
     d0 = np.asarray(d0, dtype=float)
@@ -319,7 +322,8 @@ def simulate_cracks_vectorized(
             rep1_new, rep2_new, factor = 0, 0, df[0]
     elif action == 1:
         rep1_new, rep2_new, factor = life[1], rep2_joint, df[1]
-        d0 = np.full_like(d0, np.random.uniform(1.1, 1.4))
+        if reset_recoat_depth:
+            d0 = np.full_like(d0, np.random.uniform(1.1, 1.4))
     else:
         rep1_new, rep2_new, factor = rep1_joint, life[2], df[2]
         d0 = np.full_like(d0, np.random.uniform(1.1, 1.4))
@@ -527,6 +531,7 @@ def Joint_planning_step(
     t, k, L, D, gs, rep1, rep2, ptr, nxt, births, active,
     props, costs, sim, S_err, q_pod, Qsf_arr, Fsf_arr, M_v_arr,
     insp_times, failed_locations, birth_rate, action_arr,
+    decision_mode=ILI_DECISION_MODE,
 ):
     nx = L.shape[1]
     expected_failure = expected_repair = 0.0
@@ -590,7 +595,25 @@ def Joint_planning_step(
             continue
 
         action = 0
-        if is_inspection:
+        if is_inspection and decision_mode == EXCAVATION_DECISION_MODE:
+            # Prior/no-ILI strategy from System_regular_repair.py: excavate
+            # joints known to contain initial cracks, observe them perfectly,
+            # and always apply at least the type-1 intervention.
+            if props["num_initial_cracks"] > 0:
+                action = 1
+                for loc in active[xk]:
+                    _, criterion_2, *_ = limit_state_burst(
+                        BURST_VARIABLE_NAMES,
+                        [L[loc, xk], D[loc, xk], MEAN_WT, MEAN_SMYS,
+                         MEAN_SMTS, MEAN_CVN, MEAN_E],
+                        1, sim["FPR_rep2"] * MOP,
+                    )
+                    if D[loc, xk] >= sim["D_rep2"] or criterion_2:
+                        action = 2
+                        break
+        elif is_inspection:
+            # Pre-posterior strategy: ILI detection and noisy measurements
+            # determine whether the joint receives a repair action.
             for loc in active[xk]:
                 if np.random.rand() > POD(D[loc, xk], q_pod):
                     continue
@@ -617,6 +640,7 @@ def Joint_planning_step(
                         break
                 break
 
+        if is_inspection:
             repair_count += int(action > 0)
             expected_repair += (
                 costs["Cr1"] * int(action > 0) + costs["Cr2"] * int(action == 2)
@@ -634,6 +658,7 @@ def Joint_planning_step(
                     Qsf_arr[locations, xk], Fsf_arr[locations, xk],
                     M_v_arr[locations, xk],
                     sim.get("resample_growth_each_step", True),
+                    decision_mode != EXCAVATION_DECISION_MODE,
                 )
             )
 
@@ -702,6 +727,7 @@ def run_simulation(
     *, track_debug=True, debug_sample_idx=10, debug_crack_count=None,
     joint_definitions=None, property_seed=0,
     crack_length_std=15.6, crack_depth_std=0.74, debug_joint=None,
+    decision_mode=ILI_DECISION_MODE,
 ):
     """Run one inspection-policy simulation.
 
@@ -712,6 +738,10 @@ def run_simulation(
     permits joint-specific properties, crack means, and birth rates. The old
     positional arguments remain unchanged for backward compatibility.
     """
+    if decision_mode not in DECISION_MODES:
+        raise ValueError(
+            f"decision_mode must be one of {sorted(DECISION_MODES)}."
+        )
     start = time.time()
     flexible_mode = joint_definitions is not None
     if flexible_mode:
@@ -877,7 +907,10 @@ def run_simulation(
                 arrays_for_checkpoint(), nested_for_checkpoint()
             )
         t = times[k]
-        if np.any(np.isclose(insp_times, t)):
+        if (
+            decision_mode == ILI_DECISION_MODE
+            and np.any(np.isclose(insp_times, t))
+        ):
             cii[k] = costs["total_insp_cost"] / (1 + costs["rate"]) ** t
 
         group_leak_pofs, group_burst_pofs = [], []
@@ -887,7 +920,7 @@ def run_simulation(
                 ptr[j], nxt[j], births_list[j], active[j], pipe_props_list[j],
                 costs, sim_params, S_err, q_pod, qsf_states[j], fsf_states[j],
                 mv_states[j], insp_times, failed_locations[j], birth_rates[j],
-                action_arr[j],
+                action_arr[j], decision_mode,
             )
             (
                 joint_cpp, joint_cff, joint_crr, _, leaks, bursts,
@@ -997,6 +1030,7 @@ def run_flexible_simulation(
     *, default_birth_rate=0.0, property_seed=0,
     crack_length_std=15.6, crack_depth_std=0.74,
     track_debug=True, debug_sample_idx=10, debug_joint=None,
+    decision_mode=ILI_DECISION_MODE,
 ):
     """Convenient interface for individually specified joints or joint groups.
 
@@ -1014,6 +1048,7 @@ def run_flexible_simulation(
         crack_length_std=crack_length_std,
         crack_depth_std=crack_depth_std,
         debug_joint=debug_joint,
+        decision_mode=decision_mode,
     )
 
 

@@ -1,7 +1,13 @@
-# Pipeline Inspection Schedule Lab
+# Pipeline Scheduling and Value of Information Lab
 
-This folder is a self-contained Streamlit demonstration of the optimized J3
-inspection-schedule model. The original DBN scripts are not modified.
+This folder is a self-contained Streamlit demonstration comparing the optimized
+J3 ILI schedule with a prior excavation schedule adapted from
+`System_regular_repair.py` and `optimize_regular_repair.py`.
+
+The comparison uses common pipe, crack, deterioration, cost, candidate-interval,
+and Monte Carlo inputs. It reports net VoI as:
+
+`minimum prior excavation cost - minimum ILI-informed cost`
 
 ## Start locally
 
@@ -10,7 +16,7 @@ On macOS, double-click `run_app.command`. On Windows, double-click
 the packages in `requirements.txt`.
 
 The application opens on a separate **Introduction** page. Use the navigation
-menu to open **Inspection scheduling**.
+menu to open **Scheduling and VoI**.
 
 ## Edit the introduction page
 
@@ -18,9 +24,11 @@ menu to open **Inspection scheduling**.
 - Edit `content/DOCUMENTATION.md` to change the explanation and documentation.
 - Replace the files in `assets/` to update the two portraits or university logo.
 
-The scheduling calculations remain in `inspection_planner.py`. The small
-`streamlit_app.py` file only configures the two-page navigation, so the
-Streamlit Community Cloud entry point remains unchanged.
+The scheduling interface remains in `inspection_planner.py`; the shared
+simulation logic is in `Simp_Sys_Thresh_J3_optimized.py`, and the pure
+optimization/VoI helpers are in `planning_analysis.py`. The small
+`streamlit_app.py` file only configures navigation, so the Streamlit Community
+Cloud entry point remains unchanged.
 
 See [`docs/INTRODUCTION_PAGE_SETUP.md`](docs/INTRODUCTION_PAGE_SETUP.md) for the
 step-by-step implementation and editing workflow.

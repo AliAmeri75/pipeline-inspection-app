@@ -17,10 +17,13 @@ from packaging.version import Version
 
 from Simp_Sys_Thresh_J3_optimized import (
     DEFAULT_PROPERTY_SPECS,
+    EXCAVATION_DECISION_MODE,
+    ILI_DECISION_MODE,
     MEAN_WT,
     PROPERTY_NAMES,
     run_flexible_simulation,
 )
+from planning_analysis import calculate_value_of_information, select_optimal_result
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -180,7 +183,7 @@ def table_to_joints(table, growth, default_birth_rate, extra_crack_free):
     return joints
 
 
-def unpack_result(raw, interval):
+def unpack_result(raw, interval, decision_mode):
     (
         times, leak_pof, burst_pof, leak_hazard, burst_hazard, inspections,
         cpp, cff, crr, cii, is_safe, unsafe_times,
@@ -188,6 +191,7 @@ def unpack_result(raw, interval):
     ) = raw
     return {
         "interval": interval,
+        "decision_mode": decision_mode,
         "times": times,
         "leak_pof": leak_pof,
         "burst_pof": burst_pof,
@@ -208,16 +212,22 @@ def unpack_result(raw, interval):
     }
 
 
-def run_interval_study(joints, intervals, model):
+def run_interval_study(joints, intervals, model, decision_mode):
+    method_label = (
+        "prior excavation"
+        if decision_mode == EXCAVATION_DECISION_MODE
+        else "ILI-informed inspection"
+    )
     results = []
-    progress = st.progress(0, text="Preparing simulations…")
+    progress = st.progress(0, text=f"Preparing {method_label} simulations…")
     log = io.StringIO()
     for index, interval in enumerate(intervals):
         sim = copy.deepcopy(model["sim"])
         sim["inspection_interval"] = interval
         np.random.seed(model["seed"])
         progress.progress(
-            index / len(intervals), text=f"Testing a {interval}-year interval…"
+            index / len(intervals),
+            text=f"Testing {method_label}: {interval}-year interval…",
         )
         with contextlib.redirect_stdout(log):
             raw = run_flexible_simulation(
@@ -235,9 +245,10 @@ def run_interval_study(joints, intervals, model):
                 crack_length_std=model["initial_length_std"],
                 crack_depth_std=model["initial_depth_std"],
                 track_debug=False,
+                decision_mode=decision_mode,
             )
-        results.append(unpack_result(raw, interval))
-    progress.progress(1.0, text="Optimization complete")
+        results.append(unpack_result(raw, interval, decision_mode))
+    progress.progress(1.0, text=f"{method_label.capitalize()} optimization complete")
     return results, log.getvalue()
 
 
@@ -269,10 +280,10 @@ def show_figure(figure):
     st.plotly_chart(figure, config={"displaylogo": False}, **width_argument)
 
 
-def cost_figure(results):
+def cost_figure(results, title, interval_label):
     figure = base_figure(
-        "Expected lifecycle cost versus inspection interval",
-        "Inspection interval (years)",
+        title,
+        interval_label,
         "Expected cost (million USD)",
     )
     styles = [
@@ -295,9 +306,9 @@ def cost_figure(results):
     return figure
 
 
-def annual_pof_figure(result):
+def annual_pof_figure(result, schedule_label):
     figure = base_figure(
-        f"Annual system POF at the optimal {result['interval']}-year interval",
+        f"Annual system POF at the optimal {result['interval']}-year {schedule_label.lower()} interval",
         "Year",
         "Annual probability of failure (per km-year)",
     )
@@ -340,11 +351,61 @@ def results_table(results):
                 "Total Cpp ($M)": result["total_cpp"],
                 "Failure ($M)": result["failure_cost"],
                 "Repair ($M)": result["repair_cost"],
-                "Inspection ($M)": result["inspection_cost"],
+                "ILI inspection ($M)": result["inspection_cost"],
                 "Expected repairs": result["expected_repairs"],
                 "Safe": "Yes" if result["is_safe"] else "No",
             }
             for result in results
+        ]
+    )
+
+
+def comparison_cost_figure(prior_results, ili_results):
+    figure = base_figure(
+        "Prior excavation versus ILI-informed scheduling",
+        "Schedule interval (years)",
+        "Expected lifecycle cost (million USD)",
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=[result["interval"] for result in prior_results],
+            y=[result["total_cpp"] for result in prior_results],
+            name="Prior: excavation without ILI",
+            mode="lines+markers",
+            line={"color": COLORS["amber"], "width": 3},
+            marker={"size": 8},
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=[result["interval"] for result in ili_results],
+            y=[result["total_cpp"] for result in ili_results],
+            name="Pre-posterior: ILI-informed",
+            mode="lines+markers",
+            line={"color": COLORS["teal"], "width": 3},
+            marker={"size": 8},
+        )
+    )
+    return figure
+
+
+def comparison_table(prior_results, ili_results):
+    prior_by_interval = {result["interval"]: result for result in prior_results}
+    ili_by_interval = {result["interval"]: result for result in ili_results}
+    return pd.DataFrame(
+        [
+            {
+                "Interval (years)": interval,
+                "Prior excavation cost ($M)": prior_by_interval[interval]["total_cpp"],
+                "ILI-informed cost ($M)": ili_by_interval[interval]["total_cpp"],
+                "Cost difference / VoI ($M)": (
+                    prior_by_interval[interval]["total_cpp"]
+                    - ili_by_interval[interval]["total_cpp"]
+                ),
+                "Prior safe": "Yes" if prior_by_interval[interval]["is_safe"] else "No",
+                "ILI safe": "Yes" if ili_by_interval[interval]["is_safe"] else "No",
+            }
+            for interval in sorted(set(prior_by_interval) & set(ili_by_interval))
         ]
     )
 
@@ -360,9 +421,9 @@ st.markdown(
     """
     <div class="hero">
       <small>Reliability-based planning</small>
-      <h1>Pipeline Inspection Schedule Lab</h1>
-      <p>Compare equidistant inspection intervals using joint-specific cracks,
-         Monte Carlo deterioration, repair actions, and system failure costs.</p>
+      <h1>Pipeline Scheduling and Value of Information Lab</h1>
+      <p>Compare prior excavation scheduling without ILI against pre-posterior,
+         ILI-informed scheduling using the same deterioration and cost model.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -378,7 +439,7 @@ with st.sidebar:
         help="These statistically identical joints are evaluated as one efficient group.",
     )
 
-    st.subheader("Inspection intervals")
+    st.subheader("Candidate schedule intervals")
     interval_start = st.number_input("First interval", 1, 100, 5, 1)
     interval_end = st.number_input("Last interval", 1, 100, 20, 1)
     interval_step = st.number_input("Interval step", 1, 50, 5, 1)
@@ -398,8 +459,14 @@ with st.sidebar:
         )
 
     with st.expander("Costs (million USD)"):
-        inspection_cost = st.number_input("Inspection cost per event", 0.0, 1000.0, 0.015, 0.005)
-        repair_1_cost = st.number_input("Repair type 1 cost, Cr1", 0.0, 1000.0, 0.20, 0.05)
+        inspection_cost = st.number_input(
+            "ILI inspection cost per event", 0.0, 1000.0, 0.015, 0.005,
+            help="Applied only to the ILI-informed method.",
+        )
+        repair_1_cost = st.number_input(
+            "Type 1 intervention cost, Cr1", 0.0, 1000.0, 0.20, 0.05,
+            help="For the prior method, this is the base cost of excavating and treating a cracked joint.",
+        )
         repair_2_cost = st.number_input("Additional type 2 cost, Cr2", 0.0, 1000.0, 0.0, 0.05)
         leak_cost = st.number_input("Leak failure cost", 0.0, 10000.0, 2.0, 0.5)
         burst_cost = st.number_input("Burst failure cost", 0.001, 10000.0, 20.0, 1.0)
@@ -439,6 +506,13 @@ st.markdown(
     '<div class="note">Use one row per joint. Separate multiple crack means with '
     'semicolons—for example, <b>40; 45</b>. A blank size list is required when '
     '<b>num_cracks = 0</b>. The <b>count</b> column can represent identical joints efficiently.</div>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    '<div class="note"><b>Prior method:</b> at each candidate interval, joints '
+    'known to contain initial cracks are excavated and treated with perfect '
+    'observation—no ILI, POD, or measurement error. <b>Pre-posterior method:</b> '
+    'ILI detection and measured crack sizes determine whether treatment occurs.</div>',
     unsafe_allow_html=True,
 )
 
@@ -511,7 +585,7 @@ metric_columns[2].metric("Candidate intervals", len(intervals))
 metric_columns[3].metric("Monte Carlo samples", f"{samples:,}")
 
 simulation_units = len(joints)
-work_units = simulation_units * samples * (horizon + 1) * max(len(intervals), 1)
+work_units = 2 * simulation_units * samples * (horizon + 1) * max(len(intervals), 1)
 if work_units > 2_000_000:
     st.warning(
         "This selection is relatively heavy for an interactive demonstration. "
@@ -556,13 +630,23 @@ model = {
 }
 
 run_disabled = not joints or not intervals or not allow_heavy
-if st.button("Run interval optimization", type="primary", disabled=run_disabled):
+if st.button(
+    "Run prior + pre-posterior comparison", type="primary", disabled=run_disabled
+):
     try:
-        with st.spinner("Running the Monte Carlo interval comparison…"):
-            results, simulation_log = run_interval_study(joints, intervals, model)
-        st.session_state["interval_study"] = {
-            "results": results,
-            "log": simulation_log,
+        with st.spinner("Running the prior excavation schedules…"):
+            prior_results, prior_log = run_interval_study(
+                joints, intervals, model, EXCAVATION_DECISION_MODE
+            )
+        with st.spinner("Running the ILI-informed schedules…"):
+            ili_results, ili_log = run_interval_study(
+                joints, intervals, model, ILI_DECISION_MODE
+            )
+        st.session_state["planning_comparison"] = {
+            "prior_results": prior_results,
+            "ili_results": ili_results,
+            "prior_log": prior_log,
+            "ili_log": ili_log,
             "joint_count": total_joints,
             "sample_count": samples,
         }
@@ -570,41 +654,156 @@ if st.button("Run interval optimization", type="primary", disabled=run_disabled)
         st.exception(exc)
 
 
-study = st.session_state.get("interval_study")
+study = st.session_state.get("planning_comparison")
 if study:
-    results = study["results"]
-    optimal = min(results, key=lambda result: result["total_cpp"])
-    st.subheader("2. Optimization results")
-    columns = st.columns(4)
-    columns[0].metric("Optimal interval", f"{optimal['interval']} years")
-    columns[1].metric("Minimum Cpp", f"${optimal['total_cpp']:.4f}M")
-    columns[2].metric("Expected repairs", f"{optimal['expected_repairs']:.3f}")
-    columns[3].metric("Safety criteria", "Satisfied" if optimal["is_safe"] else "Exceeded")
+    prior_results = study["prior_results"]
+    ili_results = study["ili_results"]
+    prior_optimal, prior_has_safe = select_optimal_result(prior_results)
+    ili_optimal, ili_has_safe = select_optimal_result(ili_results)
+    voi = calculate_value_of_information(prior_optimal, ili_optimal)
 
-    show_figure(cost_figure(results))
-    show_figure(annual_pof_figure(optimal))
+    st.subheader("2. Optimized schedules and VoI")
+    columns = st.columns(5)
+    columns[0].metric(
+        "Prior excavation interval", f"{prior_optimal['interval']} years"
+    )
+    columns[1].metric("Prior minimum cost", f"${prior_optimal['total_cpp']:.4f}M")
+    columns[2].metric("ILI interval", f"{ili_optimal['interval']} years")
+    columns[3].metric("ILI minimum cost", f"${ili_optimal['total_cpp']:.4f}M")
+    columns[4].metric(
+        "Net VoI of ILI",
+        f"${voi['voi']:.4f}M",
+        help="Minimum prior excavation cost minus minimum ILI-informed lifecycle cost.",
+    )
+    if voi["ili_justified"]:
+        st.success(voi["interpretation"])
+    else:
+        st.warning(voi["interpretation"])
+    st.markdown(
+        '<div class="note"><b>VoI = minimum prior excavation cost − minimum '
+        'ILI-informed cost.</b> The ILI-informed cost already includes discounted '
+        'ILI inspection costs. A positive value economically supports the ILI-informed '
+        'method for the assumptions entered here.</div>',
+        unsafe_allow_html=True,
+    )
+    if not prior_has_safe or not ili_has_safe:
+        missing = []
+        if not prior_has_safe:
+            missing.append("prior excavation")
+        if not ili_has_safe:
+            missing.append("ILI-informed")
+        st.warning(
+            "No candidate interval satisfied both POF criteria for "
+            + " and ".join(missing)
+            + "; its lowest-cost candidate is shown instead."
+        )
 
-    table = results_table(results)
-    st.dataframe(
-        table.style.format(
-            {
-                "Total Cpp ($M)": "{:.6f}",
-                "Failure ($M)": "{:.6f}",
-                "Repair ($M)": "{:.6f}",
-                "Inspection ($M)": "{:.6f}",
-                "Expected repairs": "{:.4f}",
-            }
-        ),
-        width="stretch",
-        hide_index=True,
+    comparison_tab, prior_tab, ili_tab = st.tabs(
+        ["VoI comparison", "Prior excavation (no ILI)", "Pre-posterior (ILI)"]
     )
-    st.download_button(
-        "Download interval results",
-        table.to_csv(index=False).encode("utf-8"),
-        "inspection_interval_results.csv",
-        "text/csv",
-    )
-    with st.expander("Simulation messages"):
-        st.code(study["log"] or "No simulation messages.")
+    with comparison_tab:
+        show_figure(comparison_cost_figure(prior_results, ili_results))
+        combined = comparison_table(prior_results, ili_results)
+        st.dataframe(
+            combined.style.format(
+                {
+                    "Prior excavation cost ($M)": "{:.6f}",
+                    "ILI-informed cost ($M)": "{:.6f}",
+                    "Cost difference / VoI ($M)": "{:.6f}",
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+        st.download_button(
+            "Download VoI comparison",
+            combined.to_csv(index=False).encode("utf-8"),
+            "excavation_vs_ili_voi.csv",
+            "text/csv",
+        )
+
+    with prior_tab:
+        prior_columns = st.columns(4)
+        prior_columns[0].metric("Optimal interval", f"{prior_optimal['interval']} years")
+        prior_columns[1].metric("Minimum Cpp", f"${prior_optimal['total_cpp']:.4f}M")
+        prior_columns[2].metric(
+            "Expected interventions", f"{prior_optimal['expected_repairs']:.3f}"
+        )
+        prior_columns[3].metric(
+            "Safety criteria", "Satisfied" if prior_optimal["is_safe"] else "Exceeded"
+        )
+        show_figure(
+            cost_figure(
+                prior_results,
+                "Prior lifecycle cost versus excavation interval",
+                "Excavation interval (years)",
+            )
+        )
+        show_figure(annual_pof_figure(prior_optimal, "Excavation"))
+        prior_table = results_table(prior_results)
+        st.dataframe(
+            prior_table.style.format(
+                {
+                    "Total Cpp ($M)": "{:.6f}",
+                    "Failure ($M)": "{:.6f}",
+                    "Repair ($M)": "{:.6f}",
+                    "ILI inspection ($M)": "{:.6f}",
+                    "Expected repairs": "{:.4f}",
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+        st.download_button(
+            "Download prior excavation results",
+            prior_table.to_csv(index=False).encode("utf-8"),
+            "prior_excavation_results.csv",
+            "text/csv",
+        )
+        with st.expander("Prior simulation messages"):
+            st.code(study["prior_log"] or "No simulation messages.")
+
+    with ili_tab:
+        ili_columns = st.columns(4)
+        ili_columns[0].metric("Optimal interval", f"{ili_optimal['interval']} years")
+        ili_columns[1].metric("Minimum Cpp", f"${ili_optimal['total_cpp']:.4f}M")
+        ili_columns[2].metric(
+            "Expected repairs", f"{ili_optimal['expected_repairs']:.3f}"
+        )
+        ili_columns[3].metric(
+            "Safety criteria", "Satisfied" if ili_optimal["is_safe"] else "Exceeded"
+        )
+        show_figure(
+            cost_figure(
+                ili_results,
+                "Pre-posterior lifecycle cost versus ILI interval",
+                "ILI interval (years)",
+            )
+        )
+        show_figure(annual_pof_figure(ili_optimal, "ILI inspection"))
+        ili_table = results_table(ili_results)
+        st.dataframe(
+            ili_table.style.format(
+                {
+                    "Total Cpp ($M)": "{:.6f}",
+                    "Failure ($M)": "{:.6f}",
+                    "Repair ($M)": "{:.6f}",
+                    "ILI inspection ($M)": "{:.6f}",
+                    "Expected repairs": "{:.4f}",
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+        st.download_button(
+            "Download ILI-informed results",
+            ili_table.to_csv(index=False).encode("utf-8"),
+            "ili_informed_results.csv",
+            "text/csv",
+        )
+        with st.expander("ILI simulation messages"):
+            st.code(study["ili_log"] or "No simulation messages.")
 else:
-    st.info("Adjust the inputs if needed, then select **Run interval optimization**.")
+    st.info(
+        "Adjust the inputs if needed, then select **Run prior + pre-posterior comparison**."
+    )

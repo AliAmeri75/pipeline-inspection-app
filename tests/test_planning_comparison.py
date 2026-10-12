@@ -1,0 +1,104 @@
+"""Regression tests for prior excavation and ILI-informed scheduling."""
+
+from __future__ import annotations
+
+import unittest
+
+import numpy as np
+
+from planning_analysis import calculate_value_of_information, select_optimal_result
+from Simp_Sys_Thresh_J3_optimized import (
+    EXCAVATION_DECISION_MODE,
+    ILI_DECISION_MODE,
+    run_flexible_simulation,
+)
+
+
+class PlanningComparisonTests(unittest.TestCase):
+    def test_optimization_prefers_safe_candidates(self):
+        results = [
+            {"interval": 5, "total_cpp": 1.0, "is_safe": False},
+            {"interval": 10, "total_cpp": 1.4, "is_safe": True},
+            {"interval": 15, "total_cpp": 1.8, "is_safe": True},
+        ]
+        optimal, has_safe = select_optimal_result(results)
+        self.assertTrue(has_safe)
+        self.assertEqual(optimal["interval"], 10)
+
+    def test_voi_is_prior_cost_minus_ili_cost(self):
+        comparison = calculate_value_of_information(
+            {"total_cpp": 1.25}, {"total_cpp": 0.90}
+        )
+        self.assertAlmostEqual(comparison["voi"], 0.35)
+        self.assertTrue(comparison["ili_justified"])
+
+    def test_prior_excavation_does_not_use_pod_or_charge_ili_cost(self):
+        joints = [
+            {
+                "name": "Test joint",
+                "count": 1,
+                "cracks": [{"mean_length": 40.0, "mean_depth": 1.0}],
+                "properties": {},
+                "birth_rate": 0.0,
+            }
+        ]
+        costs = {
+            "Cr1": 0.2,
+            "Cr2": 0.05,
+            "Cf_leak": 2.0,
+            "Cf_burst": 20.0,
+            "total_insp_cost": 0.015,
+            "pipe_length_km": 1.0,
+            "rate": 0.04,
+        }
+        simulation = {
+            "dS": 2.0,
+            "m": 3.0,
+            "Di": 20 * 25.4,
+            "FPR_rep1": 1.25,
+            "D_rep1": 3.175,
+            "FPR_rep2": 1.10,
+            "D_rep2": 4.445,
+            "lifetime_arr": [0, 5, 5],
+            "df_arr": [1, 0, 0],
+            "threshold": 1e-3,
+            "inspection_interval": 2,
+            "resample_growth_each_step": False,
+        }
+        common = (
+            "equidistant",
+            5,
+            1,
+            30,
+            joints,
+            costs,
+            simulation,
+            [0.74, 15.6],
+            0.0,
+        )
+
+        np.random.seed(0)
+        ili = run_flexible_simulation(
+            *common,
+            default_birth_rate=0.0,
+            property_seed=0,
+            track_debug=False,
+            decision_mode=ILI_DECISION_MODE,
+        )
+        np.random.seed(0)
+        prior = run_flexible_simulation(
+            *common,
+            default_birth_rate=0.0,
+            property_seed=0,
+            track_debug=False,
+            decision_mode=EXCAVATION_DECISION_MODE,
+        )
+
+        self.assertEqual(float(np.sum(ili[14])), 0.0)
+        self.assertGreater(float(np.sum(ili[9])), 0.0)
+        self.assertGreater(float(np.sum(prior[14])), 0.0)
+        self.assertEqual(float(np.sum(prior[9])), 0.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

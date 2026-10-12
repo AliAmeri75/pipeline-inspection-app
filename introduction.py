@@ -122,9 +122,9 @@ st.markdown(
     <section class="brand-hero">
       <img class="brand-logo" src="{logo}" alt="University of Alberta">
       <div class="eyebrow">Reliability-based pipeline integrity planning</div>
-      <h1>Pipeline Inspection Scheduling</h1>
-      <p>Interactive decision support for comparing fixed inspection intervals across
-      multiple pipe joints under deterioration, inspection uncertainty, repair actions,
+      <h1>Pipeline Scheduling and Value of Information</h1>
+      <p>Compare fixed excavation schedules without ILI against ILI-informed schedules
+      across multiple pipe joints under deterioration, uncertainty, repair actions,
       failure risk, and life-cycle cost.</p>
       <div class="credit-line">Developed by Mohammadali Ameri and Yong Li</div>
     </section>
@@ -156,8 +156,8 @@ st.markdown(
       </span>
       <span>
         <span class="cta-kicker">Start your analysis</span>
-        <strong class="cta-title">Open the Inspection Scheduling App<span class="cta-arrow">→</span></strong>
-        <span class="cta-detail">Define the pipe joints, compare inspection intervals, and review the results.</span>
+        <strong class="cta-title">Open the Scheduling and VoI App<span class="cta-arrow">→</span></strong>
+        <span class="cta-detail">Optimize prior excavation and ILI schedules, then compare their lifecycle costs.</span>
       </span>
       <img class="ili-picture" src="{ili_illustration}"
            alt="Illustration of an inline inspection tool inside a pipeline">

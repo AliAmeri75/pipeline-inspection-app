@@ -5,7 +5,7 @@ import streamlit as st
 
 
 st.set_page_config(
-    page_title="Pipeline Inspection Planning",
+    page_title="Pipeline Scheduling and VoI",
     page_icon="🛠️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -19,7 +19,7 @@ introduction = st.Page(
 )
 inspection_planner = st.Page(
     "inspection_planner.py",
-    title="Inspection scheduling",
+    title="Scheduling and VoI",
     icon=":material/timeline:",
 )
 
