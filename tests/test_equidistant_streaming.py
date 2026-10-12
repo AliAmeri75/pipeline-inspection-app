@@ -1,0 +1,151 @@
+"""Regression tests for the readable equidistant-only simulation."""
+
+from __future__ import annotations
+
+import unittest
+
+import numpy as np
+
+from Simp_Sys_Equidistant_streaming import (
+    run_flexible_equidistant_simulation,
+    run_flexible_simulation,
+)
+from Simp_Sys_Thresh_J3_streaming import (
+    run_flexible_simulation as run_previous_streaming,
+)
+
+
+def _inputs():
+    joints = [
+        {
+            "name": "Cracked joint",
+            "count": 1,
+            "cracks": [{"mean_length": 30.0, "mean_depth": 0.8}],
+            "properties": {},
+            "birth_rate": 0.0,
+        },
+        {
+            "name": "Crack-free group",
+            "count": 3,
+            "cracks": [],
+            "properties": {},
+            "birth_rate": 0.0,
+        },
+    ]
+    costs = {
+        "Cr1": 0.2,
+        "Cr2": 0.05,
+        "Cf_leak": 2.0,
+        "Cf_burst": 20.0,
+        "total_insp_cost": 0.015,
+        "pipe_length_km": 1.0,
+        "rate": 0.04,
+    }
+    simulation = {
+        "dS": 2.0,
+        "m": 3.0,
+        "Di": 20 * 25.4,
+        "FPR_rep1": 1.25,
+        "D_rep1": 3.175,
+        "FPR_rep2": 1.10,
+        "D_rep2": 4.445,
+        "lifetime_arr": [0, 5, 5],
+        "df_arr": [1, 0, 0],
+        "inspection_interval": 2,
+        "resample_growth_each_step": False,
+    }
+    return joints, costs, simulation
+
+
+class EquidistantStreamingTests(unittest.TestCase):
+    def test_matches_previous_streaming_equidistant_results(self):
+        joints, costs, simulation = _inputs()
+        common_arguments = (
+            "equidistant",
+            2,
+            1,
+            12,
+            joints,
+            costs,
+            simulation,
+            [0.74, 15.6],
+            1.0,
+        )
+        options = {
+            "property_seed": 7,
+            "simulation_seed": 17,
+            "track_debug": False,
+        }
+
+        previous = run_previous_streaming(*common_arguments, **options)
+        current = run_flexible_simulation(*common_arguments, **options)
+
+        array_positions = list(range(10)) + [12, 13, 14]
+        for position in array_positions:
+            np.testing.assert_allclose(current[position], previous[position])
+        for current_actions, previous_actions in zip(current[15], previous[15]):
+            np.testing.assert_allclose(current_actions, previous_actions)
+
+        self.assertEqual(current[10], previous[10])
+        self.assertEqual(current[11], previous[11])
+        self.assertEqual(
+            current[16]["retained_samples"],
+            previous[16]["retained_samples"],
+        )
+
+    def test_direct_api_returns_aggregate_results(self):
+        joints, costs, simulation = _inputs()
+        result = run_flexible_equidistant_simulation(
+            2,
+            1,
+            4,
+            joints,
+            costs,
+            simulation,
+            [0.74, 15.6],
+            1.0,
+            property_seed=7,
+            simulation_seed=17,
+            track_debug=False,
+        )
+
+        np.testing.assert_allclose(result[6], result[7] + result[8] + result[9])
+        self.assertEqual(result[16]["scheduling_mode"], "equidistant")
+        self.assertEqual(result[16]["streaming_passes"], 1)
+        self.assertEqual(result[16]["joint_cpp"].shape, (2, 3))
+        self.assertIn("one realization at a time", result[16]["storage_mode"])
+
+    def test_threshold_mode_is_explicitly_rejected(self):
+        joints, costs, simulation = _inputs()
+        with self.assertRaisesRegex(ValueError, "only approach='equidistant'"):
+            run_flexible_simulation(
+                "threshold",
+                2,
+                1,
+                4,
+                joints,
+                costs,
+                simulation,
+                [0.74, 15.6],
+                1.0,
+            )
+
+    def test_inspection_times_must_be_on_the_simulation_grid(self):
+        joints, costs, simulation = _inputs()
+        simulation["inspection_times"] = [0.5]
+        with self.assertRaisesRegex(ValueError, "coincide with a simulation time"):
+            run_flexible_equidistant_simulation(
+                2,
+                1,
+                4,
+                joints,
+                costs,
+                simulation,
+                [0.74, 15.6],
+                1.0,
+                track_debug=False,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
