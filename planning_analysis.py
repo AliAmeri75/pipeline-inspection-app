@@ -8,16 +8,19 @@ from typing import Any
 
 def select_optimal_result(
     results: Sequence[dict[str, Any]],
-) -> tuple[dict[str, Any], bool]:
-    """Return the lowest-cost safe result, or the lowest-cost result if none is safe."""
+) -> tuple[dict[str, Any] | None, bool]:
+    """Return the lowest-cost result that satisfies the safety criteria.
+
+    An unsafe schedule is never returned as an optimum.  ``None`` tells the UI
+    that the tested interval range contains no valid recommendation.
+    """
 
     if not results:
         raise ValueError("At least one scheduling result is required.")
     safe_results = [result for result in results if bool(result.get("is_safe"))]
-    candidates = safe_results or list(results)
-    return min(candidates, key=lambda result: float(result["total_cpp"])), bool(
-        safe_results
-    )
+    if not safe_results:
+        return None, False
+    return min(safe_results, key=lambda result: float(result["total_cpp"])), True
 
 
 def calculate_value_of_information(

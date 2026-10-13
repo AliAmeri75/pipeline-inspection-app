@@ -271,27 +271,70 @@ def base_figure(title, x_title, y_title):
     return figure
 
 
-def show_figure(figure):
+def show_figure(figure, *, key=None, selectable=False):
     width_argument = (
         {"width": "stretch"}
         if MODERN_CHART_WIDTH
         else {"use_container_width": True}
     )
-    st.plotly_chart(figure, config={"displaylogo": False}, **width_argument)
+    chart_arguments = {
+        "config": {"displaylogo": False},
+        **width_argument,
+    }
+    if selectable:
+        chart_arguments.update(
+            key=key,
+            on_select="rerun",
+            selection_mode="points",
+        )
+    return st.plotly_chart(figure, **chart_arguments)
 
 
-def cost_figure(results, title, interval_label):
+def _safety_label(result):
+    return "Safe" if result["is_safe"] else "Unsafe"
+
+
+def _cost_customdata(results):
+    return np.asarray(
+        [
+            [
+                result["total_cpp"],
+                result["failure_cost"],
+                result["repair_cost"],
+                result["inspection_cost"],
+                _safety_label(result),
+            ]
+            for result in results
+        ],
+        dtype=object,
+    )
+
+
+def _cost_hover_template(total_label):
+    return (
+        "<b>Interval: %{x} years</b><br>"
+        f"{total_label}: $%{{customdata[0]:.6f}}M<br>"
+        "Cf (failure): $%{customdata[1]:.6f}M<br>"
+        "Cr (repair): $%{customdata[2]:.6f}M<br>"
+        "Ci (inspection): $%{customdata[3]:.6f}M<br>"
+        "Safety: <b>%{customdata[4]}</b><extra></extra>"
+    )
+
+
+def cost_figure(results, title, interval_label, total_label):
     figure = base_figure(
         title,
         interval_label,
         "Expected cost (million USD)",
     )
     styles = [
-        ("Total Cpp", "total_cpp", COLORS["navy"]),
-        ("Failure", "failure_cost", COLORS["coral"]),
-        ("Repair", "repair_cost", COLORS["teal"]),
-        ("Inspection", "inspection_cost", COLORS["amber"]),
+        (total_label, "total_cpp", COLORS["navy"]),
+        ("Failure cost, Cf", "failure_cost", COLORS["coral"]),
+        ("Repair cost, Cr", "repair_cost", COLORS["teal"]),
+        ("Inspection cost, Ci", "inspection_cost", COLORS["amber"]),
     ]
+    customdata = _cost_customdata(results)
+    marker_symbols = ["circle" if result["is_safe"] else "x" for result in results]
     for label, key, color in styles:
         figure.add_trace(
             go.Scatter(
@@ -300,10 +343,73 @@ def cost_figure(results, title, interval_label):
                 name=label,
                 mode="lines+markers",
                 line={"color": color, "width": 2.6},
-                marker={"size": 7},
+                marker={"size": 8, "symbol": marker_symbols},
+                customdata=customdata,
+                hovertemplate=_cost_hover_template(total_label),
             )
         )
+    figure.update_layout(hovermode="closest", clickmode="event+select")
     return figure
+
+
+def _selected_points(event):
+    """Read selected Plotly points across Streamlit's dict and attribute APIs."""
+
+    if event is None:
+        return []
+    selection = getattr(event, "selection", None)
+    if selection is None and isinstance(event, dict):
+        selection = event.get("selection")
+    if selection is None:
+        return []
+    points = getattr(selection, "points", None)
+    if points is None and isinstance(selection, dict):
+        points = selection.get("points")
+    return list(points or [])
+
+
+def _result_at_interval(results, interval):
+    try:
+        selected_interval = float(interval)
+    except (TypeError, ValueError):
+        return None
+    return next(
+        (
+            result
+            for result in results
+            if np.isclose(float(result["interval"]), selected_interval)
+        ),
+        None,
+    )
+
+
+def show_selected_cost(result, total_label):
+    if result is None:
+        return
+    st.markdown(f"**Selected interval: {result['interval']} years**")
+    columns = st.columns(4)
+    columns[0].metric(total_label, f"${result['total_cpp']:.6f}M")
+    columns[1].metric("Cf — failure cost", f"${result['failure_cost']:.6f}M")
+    columns[2].metric("Cr — repair cost", f"${result['repair_cost']:.6f}M")
+    columns[3].metric("Safety", _safety_label(result))
+    if result["is_safe"]:
+        st.success("Safe — this interval satisfies both probability-of-failure criteria.")
+    else:
+        st.error("Unsafe — this interval exceeds at least one probability-of-failure criterion.")
+
+
+def show_selectable_cost_figure(results, title, interval_label, total_label, key):
+    st.caption("Click any point to inspect its Cf, Cr, and Safe/Unsafe result. ○ Safe   × Unsafe")
+    event = show_figure(
+        cost_figure(results, title, interval_label, total_label),
+        key=key,
+        selectable=True,
+    )
+    points = _selected_points(event)
+    if points:
+        point = points[0]
+        interval = point.get("x") if isinstance(point, dict) else getattr(point, "x", None)
+        show_selected_cost(_result_at_interval(results, interval), total_label)
 
 
 def annual_pof_figure(result, schedule_label):
@@ -343,17 +449,18 @@ def annual_pof_figure(result, schedule_label):
     return figure
 
 
-def results_table(results):
+def results_table(results, total_label):
+    total_column = f"Total {total_label} ($M)"
     return pd.DataFrame(
         [
             {
                 "Interval (years)": result["interval"],
-                "Total Cpp ($M)": result["total_cpp"],
-                "Failure ($M)": result["failure_cost"],
-                "Repair ($M)": result["repair_cost"],
+                total_column: result["total_cpp"],
+                "Cf — failure ($M)": result["failure_cost"],
+                "Cr — repair ($M)": result["repair_cost"],
                 "ILI inspection ($M)": result["inspection_cost"],
                 "Expected repairs": result["expected_repairs"],
-                "Safe": "Yes" if result["is_safe"] else "No",
+                "Safety": _safety_label(result),
             }
             for result in results
         ]
@@ -373,7 +480,12 @@ def comparison_cost_figure(prior_results, ili_results):
             name="Prior: excavation without ILI",
             mode="lines+markers",
             line={"color": COLORS["amber"], "width": 3},
-            marker={"size": 8},
+            marker={
+                "size": 8,
+                "symbol": ["circle" if result["is_safe"] else "x" for result in prior_results],
+            },
+            customdata=_cost_customdata(prior_results),
+            hovertemplate=_cost_hover_template("Cprior"),
         )
     )
     figure.add_trace(
@@ -383,10 +495,38 @@ def comparison_cost_figure(prior_results, ili_results):
             name="Pre-posterior: ILI-informed",
             mode="lines+markers",
             line={"color": COLORS["teal"], "width": 3},
-            marker={"size": 8},
+            marker={
+                "size": 8,
+                "symbol": ["circle" if result["is_safe"] else "x" for result in ili_results],
+            },
+            customdata=_cost_customdata(ili_results),
+            hovertemplate=_cost_hover_template("Cpp"),
         )
     )
+    figure.update_layout(hovermode="closest", clickmode="event+select")
     return figure
+
+
+def show_comparison_cost_figure(prior_results, ili_results):
+    st.caption("Click a Cprior or Cpp point to inspect Cf, Cr, and Safe/Unsafe. ○ Safe   × Unsafe")
+    event = show_figure(
+        comparison_cost_figure(prior_results, ili_results),
+        key="comparison_cost_selection",
+        selectable=True,
+    )
+    points = _selected_points(event)
+    if not points:
+        return
+    point = points[0]
+    if isinstance(point, dict):
+        interval = point.get("x")
+        curve_number = point.get("curve_number", 0)
+    else:
+        interval = getattr(point, "x", None)
+        curve_number = getattr(point, "curve_number", 0)
+    selected_results = prior_results if int(curve_number) == 0 else ili_results
+    total_label = "Cprior" if int(curve_number) == 0 else "Cpp"
+    show_selected_cost(_result_at_interval(selected_results, interval), total_label)
 
 
 def comparison_table(prior_results, ili_results):
@@ -660,49 +800,64 @@ if study:
     ili_results = study["ili_results"]
     prior_optimal, prior_has_safe = select_optimal_result(prior_results)
     ili_optimal, ili_has_safe = select_optimal_result(ili_results)
-    voi = calculate_value_of_information(prior_optimal, ili_optimal)
+    voi = (
+        calculate_value_of_information(prior_optimal, ili_optimal)
+        if prior_optimal is not None and ili_optimal is not None
+        else None
+    )
 
-    st.subheader("2. Optimized schedules and VoI")
+    st.subheader("2. Minimum-cost safe schedules and VoI")
     columns = st.columns(5)
     columns[0].metric(
-        "Prior excavation interval", f"{prior_optimal['interval']} years"
+        "Prior safe interval",
+        f"{prior_optimal['interval']} years" if prior_optimal else "Not found",
     )
-    columns[1].metric("Prior minimum cost", f"${prior_optimal['total_cpp']:.4f}M")
-    columns[2].metric("ILI interval", f"{ili_optimal['interval']} years")
-    columns[3].metric("ILI minimum cost", f"${ili_optimal['total_cpp']:.4f}M")
+    columns[1].metric(
+        "Minimum safe Cprior",
+        f"${prior_optimal['total_cpp']:.4f}M" if prior_optimal else "—",
+    )
+    columns[2].metric(
+        "ILI safe interval",
+        f"{ili_optimal['interval']} years" if ili_optimal else "Not found",
+    )
+    columns[3].metric(
+        "Minimum safe Cpp",
+        f"${ili_optimal['total_cpp']:.4f}M" if ili_optimal else "—",
+    )
     columns[4].metric(
         "Net VoI of ILI",
-        f"${voi['voi']:.4f}M",
-        help="Minimum prior excavation cost minus minimum ILI-informed lifecycle cost.",
+        f"${voi['voi']:.4f}M" if voi else "Unavailable",
+        help="Minimum safe prior cost minus minimum safe ILI-informed lifecycle cost.",
     )
-    if voi["ili_justified"]:
-        st.success(voi["interpretation"])
-    else:
-        st.warning(voi["interpretation"])
-    st.markdown(
-        '<div class="note"><b>VoI = minimum prior excavation cost − minimum '
-        'ILI-informed cost.</b> The ILI-informed cost already includes discounted '
-        'ILI inspection costs. A positive value economically supports the ILI-informed '
-        'method for the assumptions entered here.</div>',
-        unsafe_allow_html=True,
-    )
+    if voi is not None:
+        if voi["ili_justified"]:
+            st.success(voi["interpretation"])
+        else:
+            st.warning(voi["interpretation"])
+        st.markdown(
+            '<div class="note"><b>VoI = minimum safe prior excavation cost − minimum '
+            'safe ILI-informed cost.</b> Each recommendation is the lowest-cost candidate '
+            'that satisfies both safety criteria. The ILI-informed cost already includes '
+            'discounted ILI inspection costs.</div>',
+            unsafe_allow_html=True,
+        )
     if not prior_has_safe or not ili_has_safe:
         missing = []
         if not prior_has_safe:
             missing.append("prior excavation")
         if not ili_has_safe:
             missing.append("ILI-informed")
-        st.warning(
+        st.error(
             "No candidate interval satisfied both POF criteria for "
             + " and ".join(missing)
-            + "; its lowest-cost candidate is shown instead."
+            + ". No unsafe interval is recommended. Test shorter intervals or revise the input assumptions."
         )
 
     comparison_tab, prior_tab, ili_tab = st.tabs(
         ["VoI comparison", "Prior excavation (no ILI)", "Pre-posterior (ILI)"]
     )
     with comparison_tab:
-        show_figure(comparison_cost_figure(prior_results, ili_results))
+        show_comparison_cost_figure(prior_results, ili_results)
         combined = comparison_table(prior_results, ili_results)
         st.dataframe(
             combined.style.format(
@@ -724,29 +879,37 @@ if study:
 
     with prior_tab:
         prior_columns = st.columns(4)
-        prior_columns[0].metric("Optimal interval", f"{prior_optimal['interval']} years")
-        prior_columns[1].metric("Minimum Cpp", f"${prior_optimal['total_cpp']:.4f}M")
+        prior_columns[0].metric(
+            "Recommended interval",
+            f"{prior_optimal['interval']} years" if prior_optimal else "Not found",
+        )
+        prior_columns[1].metric(
+            "Minimum safe Cprior",
+            f"${prior_optimal['total_cpp']:.4f}M" if prior_optimal else "—",
+        )
         prior_columns[2].metric(
-            "Expected interventions", f"{prior_optimal['expected_repairs']:.3f}"
+            "Expected interventions",
+            f"{prior_optimal['expected_repairs']:.3f}" if prior_optimal else "—",
         )
         prior_columns[3].metric(
-            "Safety criteria", "Satisfied" if prior_optimal["is_safe"] else "Exceeded"
+            "Safety criteria", "Satisfied" if prior_optimal else "No safe candidate"
         )
-        show_figure(
-            cost_figure(
-                prior_results,
-                "Prior lifecycle cost versus excavation interval",
-                "Excavation interval (years)",
-            )
+        show_selectable_cost_figure(
+            prior_results,
+            "Prior lifecycle cost versus excavation interval",
+            "Excavation interval (years)",
+            "Cprior",
+            "prior_cost_selection",
         )
-        show_figure(annual_pof_figure(prior_optimal, "Excavation"))
-        prior_table = results_table(prior_results)
+        if prior_optimal is not None:
+            show_figure(annual_pof_figure(prior_optimal, "Excavation"))
+        prior_table = results_table(prior_results, "Cprior")
         st.dataframe(
             prior_table.style.format(
                 {
-                    "Total Cpp ($M)": "{:.6f}",
-                    "Failure ($M)": "{:.6f}",
-                    "Repair ($M)": "{:.6f}",
+                    "Total Cprior ($M)": "{:.6f}",
+                    "Cf — failure ($M)": "{:.6f}",
+                    "Cr — repair ($M)": "{:.6f}",
                     "ILI inspection ($M)": "{:.6f}",
                     "Expected repairs": "{:.4f}",
                 }
@@ -765,29 +928,37 @@ if study:
 
     with ili_tab:
         ili_columns = st.columns(4)
-        ili_columns[0].metric("Optimal interval", f"{ili_optimal['interval']} years")
-        ili_columns[1].metric("Minimum Cpp", f"${ili_optimal['total_cpp']:.4f}M")
+        ili_columns[0].metric(
+            "Recommended interval",
+            f"{ili_optimal['interval']} years" if ili_optimal else "Not found",
+        )
+        ili_columns[1].metric(
+            "Minimum safe Cpp",
+            f"${ili_optimal['total_cpp']:.4f}M" if ili_optimal else "—",
+        )
         ili_columns[2].metric(
-            "Expected repairs", f"{ili_optimal['expected_repairs']:.3f}"
+            "Expected repairs",
+            f"{ili_optimal['expected_repairs']:.3f}" if ili_optimal else "—",
         )
         ili_columns[3].metric(
-            "Safety criteria", "Satisfied" if ili_optimal["is_safe"] else "Exceeded"
+            "Safety criteria", "Satisfied" if ili_optimal else "No safe candidate"
         )
-        show_figure(
-            cost_figure(
-                ili_results,
-                "Pre-posterior lifecycle cost versus ILI interval",
-                "ILI interval (years)",
-            )
+        show_selectable_cost_figure(
+            ili_results,
+            "Pre-posterior lifecycle cost versus ILI interval",
+            "ILI interval (years)",
+            "Cpp",
+            "ili_cost_selection",
         )
-        show_figure(annual_pof_figure(ili_optimal, "ILI inspection"))
-        ili_table = results_table(ili_results)
+        if ili_optimal is not None:
+            show_figure(annual_pof_figure(ili_optimal, "ILI inspection"))
+        ili_table = results_table(ili_results, "Cpp")
         st.dataframe(
             ili_table.style.format(
                 {
                     "Total Cpp ($M)": "{:.6f}",
-                    "Failure ($M)": "{:.6f}",
-                    "Repair ($M)": "{:.6f}",
+                    "Cf — failure ($M)": "{:.6f}",
+                    "Cr — repair ($M)": "{:.6f}",
                     "ILI inspection ($M)": "{:.6f}",
                     "Expected repairs": "{:.4f}",
                 }

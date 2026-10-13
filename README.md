@@ -5,9 +5,14 @@ J3 ILI schedule with a prior excavation schedule adapted from
 `System_regular_repair.py` and `optimize_regular_repair.py`.
 
 The comparison uses common pipe, crack, deterioration, cost, candidate-interval,
-and Monte Carlo inputs. It reports net VoI as:
+and Monte Carlo inputs. For each method, the recommended interval is the
+lowest-cost candidate that satisfies both safety criteria. An unsafe candidate
+is never presented as the optimum. It reports net VoI as:
 
-`minimum prior excavation cost - minimum ILI-informed cost`
+`minimum safe prior excavation cost - minimum safe ILI-informed cost`
+
+Click any cost-curve point to see the interval's total cost, failure cost
+(`Cf`), repair cost (`Cr`), and its **Safe** or **Unsafe** status.
 
 ## Start locally
 

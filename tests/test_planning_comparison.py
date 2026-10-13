@@ -25,6 +25,15 @@ class PlanningComparisonTests(unittest.TestCase):
         self.assertTrue(has_safe)
         self.assertEqual(optimal["interval"], 10)
 
+    def test_optimization_does_not_recommend_an_unsafe_candidate(self):
+        results = [
+            {"interval": 5, "total_cpp": 1.0, "is_safe": False},
+            {"interval": 10, "total_cpp": 0.8, "is_safe": False},
+        ]
+        optimal, has_safe = select_optimal_result(results)
+        self.assertFalse(has_safe)
+        self.assertIsNone(optimal)
+
     def test_voi_is_prior_cost_minus_ili_cost(self):
         comparison = calculate_value_of_information(
             {"total_cpp": 1.25}, {"total_cpp": 0.90}
