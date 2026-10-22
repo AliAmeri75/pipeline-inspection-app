@@ -30,6 +30,7 @@ from Simp_Sys_Thresh_J3_optimized import (
 )
 from planning_analysis import (
     calculate_value_of_information,
+    compare_ili_intervals_to_prior_safe,
     select_lowest_cost_result,
     select_optimal_result,
 )
@@ -636,24 +637,9 @@ def show_comparison_cost_figure(prior_results, ili_results):
     show_selected_cost(_result_at_interval(selected_results, interval), total_label)
 
 
-def comparison_table(prior_results, ili_results):
-    prior_by_interval = {result["interval"]: result for result in prior_results}
-    ili_by_interval = {result["interval"]: result for result in ili_results}
+def comparison_table(prior_safe_result, ili_results):
     return pd.DataFrame(
-        [
-            {
-                "Interval (years)": interval,
-                "Prior excavation cost ($M)": prior_by_interval[interval]["total_cpp"],
-                "ILI-informed cost ($M)": ili_by_interval[interval]["total_cpp"],
-                "Cost difference / VoI ($M)": (
-                    prior_by_interval[interval]["total_cpp"]
-                    - ili_by_interval[interval]["total_cpp"]
-                ),
-                "Prior safe": "Yes" if prior_by_interval[interval]["is_safe"] else "No",
-                "ILI safe": "Yes" if ili_by_interval[interval]["is_safe"] else "No",
-            }
-            for interval in sorted(set(prior_by_interval) & set(ili_by_interval))
-        ]
+        compare_ili_intervals_to_prior_safe(prior_safe_result, ili_results)
     )
 
 
@@ -743,10 +729,27 @@ with st.sidebar:
                 f"PfB ≤ {max_annual_burst_pof:.1e}."
             )
 
-    with st.expander("Inspection and excavation intervals"):
-        interval_start = st.number_input("First interval (years)", 1, 100, 5, 1)
-        interval_end = st.number_input("Last interval (years)", 1, 100, 20, 1)
-        interval_step = st.number_input("Interval step (years)", 1, 50, 5, 1)
+    with st.expander("Prior excavation intervals"):
+        prior_interval_start = st.number_input(
+            "First excavation interval (years)", 1, 100, 5, 1
+        )
+        prior_interval_end = st.number_input(
+            "Last excavation interval (years)", 1, 100, 20, 1
+        )
+        prior_interval_step = st.number_input(
+            "Excavation interval step (years)", 1, 50, 5, 1
+        )
+
+    with st.expander("ILI inspection intervals"):
+        ili_interval_start = st.number_input(
+            "First ILI interval (years)", 1, 100, 5, 1
+        )
+        ili_interval_end = st.number_input(
+            "Last ILI interval (years)", 1, 100, 20, 1
+        )
+        ili_interval_step = st.number_input(
+            "ILI interval step (years)", 1, 50, 5, 1
+        )
 
     with st.expander("Initial cracks and crack initiation"):
         extra_crack_free = st.number_input(
@@ -947,9 +950,27 @@ except Exception as exc:
     st.error(f"The CSV could not be read: {exc}")
     st.stop()
 
-intervals = (
-    list(range(int(interval_start), int(interval_end) + 1, int(interval_step)))
-    if interval_start <= interval_end else []
+prior_intervals = (
+    list(
+        range(
+            int(prior_interval_start),
+            int(prior_interval_end) + 1,
+            int(prior_interval_step),
+        )
+    )
+    if prior_interval_start <= prior_interval_end
+    else []
+)
+ili_intervals = (
+    list(
+        range(
+            int(ili_interval_start),
+            int(ili_interval_end) + 1,
+            int(ili_interval_step),
+        )
+    )
+    if ili_interval_start <= ili_interval_end
+    else []
 )
 growth_properties = {
     "alpha": {"mean": mean_g, "std": std_g, "distribution": "Normal"},
@@ -994,15 +1015,23 @@ metric_columns[2].metric(
     f"{expected_new_cracks:.3f}",
     help="Poisson mean over all represented joints and the full analysis horizon.",
 )
-metric_columns[3].metric("Candidate intervals", len(intervals))
+metric_columns[3].metric(
+    "Prior / ILI intervals", f"{len(prior_intervals)} / {len(ili_intervals)}"
+)
 metric_columns[4].metric("Monte Carlo samples", f"{samples:,}")
 
 simulation_units = len(joints)
-work_units = 2 * simulation_units * samples * (horizon + 1) * max(len(intervals), 1)
+work_units = (
+    simulation_units
+    * samples
+    * (horizon + 1)
+    * max(len(prior_intervals) + len(ili_intervals), 1)
+)
 if work_units > 2_000_000:
     st.warning(
         "This selection is relatively heavy for an interactive demonstration. "
-        "Reduce samples, intervals, horizon, or the number of individually modelled rows."
+        "Reduce samples, either interval range, horizon, or the number of "
+        "individually modelled rows."
     )
 allow_heavy = work_units <= 8_000_000 or st.checkbox(
     "I understand this larger run may take several minutes."
@@ -1056,8 +1085,13 @@ current_safety_signature = (
     float(max_annual_leak_pof) if safety_criteria_valid else None,
     float(max_annual_burst_pof) if safety_criteria_valid else None,
 )
+current_interval_signature = (tuple(prior_intervals), tuple(ili_intervals))
 run_disabled = (
-    not joints or not intervals or not allow_heavy or not safety_criteria_valid
+    not joints
+    or not prior_intervals
+    or not ili_intervals
+    or not allow_heavy
+    or not safety_criteria_valid
 )
 if st.button(
     "Run prior + pre-posterior comparison", type="primary", disabled=run_disabled
@@ -1065,11 +1099,11 @@ if st.button(
     try:
         with st.spinner("Running the prior excavation schedules…"):
             prior_results, prior_log = run_interval_study(
-                joints, intervals, model, EXCAVATION_DECISION_MODE
+                joints, prior_intervals, model, EXCAVATION_DECISION_MODE
             )
         with st.spinner("Running the ILI-informed schedules…"):
             ili_results, ili_log = run_interval_study(
-                joints, intervals, model, ILI_DECISION_MODE
+                joints, ili_intervals, model, ILI_DECISION_MODE
             )
         st.session_state["planning_comparison"] = {
             "prior_results": prior_results,
@@ -1082,6 +1116,9 @@ if st.button(
             "max_annual_leak_pof": float(max_annual_leak_pof),
             "max_annual_burst_pof": float(max_annual_burst_pof),
             "safety_signature": current_safety_signature,
+            "interval_signature": current_interval_signature,
+            "prior_intervals": prior_intervals,
+            "ili_intervals": ili_intervals,
         }
     except Exception as exc:
         st.exception(exc)
@@ -1091,6 +1128,12 @@ study = st.session_state.get("planning_comparison")
 if study and study.get("safety_signature") != current_safety_signature:
     st.info(
         "The pipeline class or safety limits changed. Run the comparison again "
+        "to update the recommendations."
+    )
+    study = None
+if study and study.get("interval_signature") != current_interval_signature:
+    st.info(
+        "The prior or ILI interval range changed. Run the comparison again "
         "to update the recommendations."
     )
     study = None
@@ -1154,12 +1197,17 @@ if study:
     )
     with comparison_tab:
         show_comparison_cost_figure(prior_results, ili_results)
-        combined = comparison_table(prior_results, ili_results)
+        st.caption(
+            "Each tested ILI interval is compared with the minimum-cost safe prior "
+            "excavation solution. ILI is economically justified only when that ILI "
+            "interval is safe and has a lower expected lifecycle cost."
+        )
+        combined = comparison_table(prior_safe, ili_results)
         st.dataframe(
             combined.style.format(
                 {
-                    "Prior excavation cost ($M)": "{:.6f}",
-                    "ILI-informed cost ($M)": "{:.6f}",
+                    "Prior safe cost ($M)": "{:.6f}",
+                    "ILI cost ($M)": "{:.6f}",
                     "Cost difference / VoI ($M)": "{:.6f}",
                 }
             ),
@@ -1169,7 +1217,7 @@ if study:
         st.download_button(
             "Download VoI comparison",
             combined.to_csv(index=False).encode("utf-8"),
-            "excavation_vs_ili_voi.csv",
+            "ili_intervals_vs_prior_safe.csv",
             "text/csv",
         )
 

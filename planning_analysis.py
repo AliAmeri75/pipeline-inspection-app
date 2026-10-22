@@ -59,3 +59,46 @@ def calculate_value_of_information(
         "ili_justified": value > 0,
         "interpretation": interpretation,
     }
+
+
+def compare_ili_intervals_to_prior_safe(
+    prior_safe_result: dict[str, Any] | None,
+    ili_results: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Compare each ILI candidate with one minimum-cost safe prior baseline.
+
+    An ILI interval is economically justified only when it satisfies the safety
+    criteria and costs less than the safe prior excavation alternative.  If no
+    safe prior solution exists, a valid economic comparison cannot be made.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for ili_result in sorted(
+        ili_results, key=lambda result: float(result["interval"])
+    ):
+        ili_is_safe = bool(ili_result.get("is_safe"))
+        ili_cost = float(ili_result["total_cpp"])
+
+        if prior_safe_result is None:
+            prior_interval: int | float | str = "Not found"
+            prior_cost = None
+            value = None
+            economically_justified = "N/A"
+        else:
+            prior_interval = prior_safe_result["interval"]
+            prior_cost = float(prior_safe_result["total_cpp"])
+            value = prior_cost - ili_cost
+            economically_justified = "Yes" if ili_is_safe and value > 0 else "No"
+
+        rows.append(
+            {
+                "Prior safe interval (years)": prior_interval,
+                "Prior safe cost ($M)": prior_cost,
+                "ILI interval (years)": ili_result["interval"],
+                "ILI cost ($M)": ili_cost,
+                "Cost difference / VoI ($M)": value,
+                "ILI safe": "Yes" if ili_is_safe else "No",
+                "ILI economically justified?": economically_justified,
+            }
+        )
+    return rows

@@ -4,10 +4,11 @@ This folder is a self-contained Streamlit demonstration comparing the optimized
 J3 ILI schedule with a prior excavation schedule adapted from
 `System_regular_repair.py` and `optimize_regular_repair.py`.
 
-The comparison uses common pipe, crack, deterioration, cost, candidate-interval,
-and Monte Carlo inputs. For each method, the recommended interval is the
-lowest-cost candidate that satisfies both safety criteria. An unsafe candidate
-is never presented as the optimum. It reports net VoI as:
+The comparison uses common pipe, crack, deterioration, cost, and Monte Carlo
+inputs, with separate candidate ranges for prior excavation and ILI inspection
+intervals. For each method, the recommended interval is the lowest-cost
+candidate that satisfies both safety criteria. An unsafe candidate is never
+presented as the optimum. It reports net VoI as:
 
 `minimum safe prior excavation cost - minimum safe ILI-informed cost`
 
@@ -54,8 +55,9 @@ The application opens on a separate **Introduction** page. Use the navigation
 menu to open **Scheduling and VoI**.
 
 The scheduling sidebar uses collapsible sections for simulation settings,
-pipeline class and safety, inspection/excavation intervals, initial cracks and
-crack initiation, crack growth, the ILI measurement model (POD and sizing
+pipeline class and safety, separate prior excavation and ILI inspection
+intervals, initial cracks and crack initiation, crack growth, the ILI
+measurement model (POD and sizing
 errors), repair criteria, repair effectiveness, and costs.
 
 The ILI measurement section offers two probability-of-detection models:

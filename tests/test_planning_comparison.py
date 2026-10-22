@@ -8,6 +8,7 @@ import numpy as np
 
 from planning_analysis import (
     calculate_value_of_information,
+    compare_ili_intervals_to_prior_safe,
     select_lowest_cost_result,
     select_optimal_result,
 )
@@ -78,6 +79,37 @@ class PlanningComparisonTests(unittest.TestCase):
         )
         self.assertAlmostEqual(comparison["voi"], 0.35)
         self.assertTrue(comparison["ili_justified"])
+
+    def test_each_ili_interval_is_compared_with_one_safe_prior_baseline(self):
+        prior_safe = {"interval": 15, "total_cpp": 0.25, "is_safe": True}
+        ili_results = [
+            {"interval": 5, "total_cpp": 0.30, "is_safe": True},
+            {"interval": 10, "total_cpp": 0.20, "is_safe": True},
+            {"interval": 20, "total_cpp": 0.15, "is_safe": False},
+        ]
+
+        rows = compare_ili_intervals_to_prior_safe(prior_safe, ili_results)
+
+        self.assertEqual(
+            [row["Prior safe interval (years)"] for row in rows],
+            [15, 15, 15],
+        )
+        self.assertEqual(
+            [row["ILI economically justified?"] for row in rows],
+            ["No", "Yes", "No"],
+        )
+        self.assertAlmostEqual(rows[1]["Cost difference / VoI ($M)"], 0.05)
+
+    def test_ili_economic_comparison_is_unavailable_without_safe_prior(self):
+        rows = compare_ili_intervals_to_prior_safe(
+            None,
+            [{"interval": 10, "total_cpp": 0.20, "is_safe": True}],
+        )
+
+        self.assertEqual(rows[0]["Prior safe interval (years)"], "Not found")
+        self.assertIsNone(rows[0]["Prior safe cost ($M)"])
+        self.assertIsNone(rows[0]["Cost difference / VoI ($M)"])
+        self.assertEqual(rows[0]["ILI economically justified?"], "N/A")
 
     def test_prior_excavation_does_not_use_pod_or_charge_ili_cost(self):
         joints = [
