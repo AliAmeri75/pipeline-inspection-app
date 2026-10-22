@@ -357,37 +357,31 @@ def recommendation_matrix(prior_cost_optimal, prior_safe, ili_cost_optimal, ili_
             if safe_result is not None
             else "—"
         )
-        return f"""
-          <tr>
-            <td>{method}</td>
-            <td><b>{cost_optimal['interval']} years</b></td>
-            <td>${cost_optimal['total_cpp']:.4f}M</td>
-            <td><span class="{badge_class}">{safety}</span></td>
-            <td>{safe_interval}</td>
-            <td>{safe_cost}</td>
-          </tr>
-        """
+        return (
+            "<tr>"
+            f"<td>{method}</td>"
+            f"<td><b>{cost_optimal['interval']} years</b></td>"
+            f"<td>${cost_optimal['total_cpp']:.4f}M</td>"
+            f'<td><span class="{badge_class}">{safety}</span></td>'
+            f"<td>{safe_interval}</td>"
+            f"<td>{safe_cost}</td>"
+            "</tr>"
+        )
 
-    return f"""
-      <div class="result-matrix">
-        <table>
-          <thead>
-            <tr>
-              <th>Planning method</th>
-              <th>Cost-optimal interval</th>
-              <th>Lowest cost</th>
-              <th>Safety at cost optimum</th>
-              <th>Minimum-cost safe interval</th>
-              <th>Safe cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {row('Prior excavation (no ILI)', prior_cost_optimal, prior_safe)}
-            {row('Pre-posterior (ILI-informed)', ili_cost_optimal, ili_safe)}
-          </tbody>
-        </table>
-      </div>
-    """
+    prior_row = row("Prior excavation (no ILI)", prior_cost_optimal, prior_safe)
+    ili_row = row("Pre-posterior (ILI-informed)", ili_cost_optimal, ili_safe)
+    return (
+        '<div class="result-matrix"><table><thead><tr>'
+        "<th>Planning method</th>"
+        "<th>Cost-optimal interval</th>"
+        "<th>Lowest cost</th>"
+        "<th>Safety at cost optimum</th>"
+        "<th>Minimum-cost safe interval</th>"
+        "<th>Safe cost</th>"
+        "</tr></thead><tbody>"
+        f"{prior_row}{ili_row}"
+        "</tbody></table></div>"
+    )
 
 
 def _cost_customdata(results):
@@ -1119,11 +1113,10 @@ if study:
         f"PfL ≤ {study['max_annual_leak_pof']:.1e}; "
         f"PfB ≤ {study['max_annual_burst_pof']:.1e}."
     )
-    st.markdown(
+    st.html(
         recommendation_matrix(
             prior_cost_optimal, prior_safe, ili_cost_optimal, ili_safe
-        ),
-        unsafe_allow_html=True,
+        )
     )
     if voi is not None:
         voi_columns = st.columns([1, 3])
