@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -59,6 +60,17 @@ def calculate_value_of_information(
         "ili_justified": value > 0,
         "interpretation": interpretation,
     }
+
+
+def format_optional_decimal(value: Any) -> str:
+    """Format an optional table value without failing on a missing result."""
+
+    if value is None:
+        return "Not found"
+    numeric_value = float(value)
+    if math.isnan(numeric_value):
+        return "Not found"
+    return f"{numeric_value:.6f}"
 
 
 def compare_ili_intervals_to_prior_safe(

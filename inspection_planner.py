@@ -30,6 +30,7 @@ from Simp_Sys_Thresh_J3_optimized import (
 from planning_analysis import (
     calculate_value_of_information,
     compare_ili_intervals_to_prior_safe,
+    format_optional_decimal,
     select_lowest_cost_result,
     select_optimal_result,
 )
@@ -1201,9 +1202,9 @@ if study:
         st.dataframe(
             combined.style.format(
                 {
-                    "Prior safe cost ($M)": "{:.6f}",
+                    "Prior safe cost ($M)": format_optional_decimal,
                     "ILI cost ($M)": "{:.6f}",
-                    "Cost difference / VoI ($M)": "{:.6f}",
+                    "Cost difference / VoI ($M)": format_optional_decimal,
                 }
             ),
             width="stretch",

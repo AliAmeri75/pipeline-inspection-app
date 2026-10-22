@@ -5,10 +5,12 @@ from __future__ import annotations
 import unittest
 
 import numpy as np
+import pandas as pd
 
 from planning_analysis import (
     calculate_value_of_information,
     compare_ili_intervals_to_prior_safe,
+    format_optional_decimal,
     select_lowest_cost_result,
     select_optimal_result,
 )
@@ -110,6 +112,16 @@ class PlanningComparisonTests(unittest.TestCase):
         self.assertIsNone(rows[0]["Prior safe cost ($M)"])
         self.assertIsNone(rows[0]["Cost difference / VoI ($M)"])
         self.assertEqual(rows[0]["ILI economically justified?"], "N/A")
+
+        table = pd.DataFrame(rows)
+        rendered = table.style.format(
+            {
+                "Prior safe cost ($M)": format_optional_decimal,
+                "ILI cost ($M)": "{:.6f}",
+                "Cost difference / VoI ($M)": format_optional_decimal,
+            }
+        ).to_html()
+        self.assertIn("Not found", rendered)
 
     def test_prior_excavation_does_not_use_pod_or_charge_ili_cost(self):
         joints = [
