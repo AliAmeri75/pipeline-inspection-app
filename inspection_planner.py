@@ -682,30 +682,12 @@ st.markdown(
 
 with st.sidebar:
     st.header("Analysis settings")
-    samples = st.number_input("Monte Carlo samples", 100, 5000, 1000, 100)
-    horizon = st.number_input("Analysis horizon (years)", 5, 100, 30, 5)
-    extra_crack_free = st.number_input(
-        "Additional crack-free joints", 0, 10000, 0, 1,
-        help="These statistically identical joints are evaluated as one efficient group.",
-    )
 
-    st.subheader("Crack initiation")
-    default_birth_rate = st.number_input(
-        "Crack birth rate (cracks per joint-year)",
-        min_value=0.0,
-        value=DEFAULT_CRACK_BIRTH_RATE,
-        step=0.00001,
-        format="%.6f",
-        help=(
-            "Expected number of newly initiated cracks in one pipe joint during one year. "
-            "The simulation samples new cracks using a Poisson process. Set this to zero "
-            "to model no new crack initiation."
-        ),
-    )
-    st.caption(
-        "This rate is used for every joint unless a `birth_rate` override is entered "
-        "in the joint table."
-    )
+    with st.expander("Simulation settings", expanded=True):
+        samples = st.number_input("Monte Carlo samples", 100, 5000, 1000, 100)
+        horizon = st.number_input("Analysis horizon (years)", 5, 100, 30, 5)
+        pipe_length = st.number_input("Pipe length (km)", 0.001, 10000.0, 1.0, 0.1)
+        random_seed = st.number_input("Random seed", 0, 1000000, 0, 1)
 
     with st.expander("Pipeline class and safety criteria", expanded=True):
         pipeline_class = st.selectbox("Pipeline class", PIPELINE_CLASSES)
@@ -764,12 +746,43 @@ with st.sidebar:
                 f"PfB ≤ {max_annual_burst_pof:.1e}."
             )
 
-    st.subheader("Candidate schedule intervals")
-    interval_start = st.number_input("First interval", 1, 100, 5, 1)
-    interval_end = st.number_input("Last interval", 1, 100, 20, 1)
-    interval_step = st.number_input("Interval step", 1, 50, 5, 1)
+    with st.expander("Inspection and excavation intervals"):
+        interval_start = st.number_input("First interval (years)", 1, 100, 5, 1)
+        interval_end = st.number_input("Last interval (years)", 1, 100, 20, 1)
+        interval_step = st.number_input("Interval step (years)", 1, 50, 5, 1)
 
-    with st.expander("Growth parameters"):
+    with st.expander("Initial cracks and crack initiation"):
+        extra_crack_free = st.number_input(
+            "Additional crack-free joints", 0, 10000, 0, 1,
+            help=(
+                "These statistically identical joints are evaluated as one "
+                "efficient group."
+            ),
+        )
+        initial_length_std = st.number_input(
+            "Initial crack-length std. (mm)", 0.0, 100.0, 15.6, 0.1
+        )
+        initial_depth_std = st.number_input(
+            "Initial crack-depth std. (mm)", 0.0, 20.0, 0.74, 0.01
+        )
+        default_birth_rate = st.number_input(
+            "Crack birth rate (cracks per joint-year)",
+            min_value=0.0,
+            value=DEFAULT_CRACK_BIRTH_RATE,
+            step=0.00001,
+            format="%.6f",
+            help=(
+                "Expected number of newly initiated cracks in one pipe joint during "
+                "one year. The simulation samples new cracks using a Poisson process. "
+                "Set this to zero to model no new crack initiation."
+            ),
+        )
+        st.caption(
+            "The sidebar birth rate applies to every joint unless the joint table "
+            "contains a specific `birth_rate` override."
+        )
+
+    with st.expander("Crack growth model"):
         mean_g = st.number_input("Mean depth growth, α (mm/year)", 0.0, 10.0, 0.10, 0.01)
         std_g = st.number_input("Std. α", 0.0, 10.0, 0.03, 0.01)
         mean_neq = st.number_input("Mean cycles/year, Neq", 0.0, 1e7, 1000.0, 100.0)
@@ -778,6 +791,43 @@ with st.sidebar:
         std_c = st.number_input("Std. Paris C", 0.0, 1e-8, 1.35e-13, 1e-14, format="%.3e")
         delta_s = st.number_input("Stress range, ΔS", 0.01, 1000.0, 2.0, 0.1)
         paris_m = st.number_input("Paris exponent, m", 0.1, 10.0, 3.0, 0.1)
+
+    with st.expander("ILI measurement model — POD and sizing error"):
+        st.caption(
+            "POD controls whether ILI detects a crack; sizing errors describe the "
+            "uncertainty in the reported crack dimensions."
+        )
+        q_pod = st.number_input("Probability-of-detection parameter, q", 0.0, 100.0, 2.0, 0.1)
+        length_error = st.number_input(
+            "ILI crack-length error std. (mm)", 0.0, 100.0, 15.6, 0.1
+        )
+        depth_error = st.number_input(
+            "ILI crack-depth error std. (mm)", 0.0, 20.0, 0.74, 0.01
+        )
+
+    with st.expander("Repair criteria 1 and 2"):
+        st.markdown("**Repair criterion 1**")
+        d_rep1 = st.number_input(
+            "Type 1 depth criterion (mm)", 0.0, 20.0, 0.5 * MEAN_WT, 0.1
+        )
+        fpr_rep1 = st.number_input(
+            "Type 1 pressure factor", 0.0, 10.0, 1.25, 0.05
+        )
+        st.divider()
+        st.markdown("**Repair criterion 2**")
+        d_rep2 = st.number_input(
+            "Type 2 depth criterion (mm)", 0.0, 20.0, 0.7 * MEAN_WT, 0.1
+        )
+        fpr_rep2 = st.number_input(
+            "Type 2 pressure factor", 0.0, 10.0, 1.10, 0.05
+        )
+
+    with st.expander("Repair effectiveness"):
+        coat_df = st.number_input("Recoat growth factor, df1", 0.0, 1.0, 0.0, 0.05)
+        coat_period = st.number_input("Recoat effective period (years)", 0, 100, 5, 1)
+        sleeve_df = st.number_input("Sleeve growth factor, df2", 0.0, 1.0, 0.0, 0.05)
+        sleeve_period = st.number_input("Sleeve effective period (years)", 0, 100, 5, 1)
+
     with st.expander("Costs (million USD)"):
         inspection_cost = st.number_input(
             "ILI inspection cost per event", 0.0, 1000.0, 0.015, 0.005,
@@ -791,25 +841,6 @@ with st.sidebar:
         leak_cost = st.number_input("Leak failure cost", 0.0, 10000.0, 2.0, 0.5)
         burst_cost = st.number_input("Burst failure cost", 0.001, 10000.0, 20.0, 1.0)
         discount_percent = st.number_input("Discount rate (%)", 0.0, 100.0, 4.0, 0.5)
-
-    with st.expander("Repair effectiveness"):
-        coat_df = st.number_input("Recoat growth factor, df1", 0.0, 1.0, 0.0, 0.05)
-        sleeve_df = st.number_input("Sleeve growth factor, df2", 0.0, 1.0, 0.0, 0.05)
-        coat_period = st.number_input("Recoat effective period (years)", 0, 100, 5, 1)
-        sleeve_period = st.number_input("Sleeve effective period (years)", 0, 100, 5, 1)
-
-    with st.expander("Uncertainty and repair criteria"):
-        initial_length_std = st.number_input("Initial crack-length std. (mm)", 0.0, 100.0, 15.6, 0.1)
-        initial_depth_std = st.number_input("Initial crack-depth std. (mm)", 0.0, 20.0, 0.74, 0.01)
-        length_error = st.number_input("Measured length error std. (mm)", 0.0, 100.0, 15.6, 0.1)
-        depth_error = st.number_input("Measured depth error std. (mm)", 0.0, 20.0, 0.74, 0.01)
-        q_pod = st.number_input("POD parameter, q", 0.0, 100.0, 2.0, 0.1)
-        d_rep1 = st.number_input("Type 1 depth criterion (mm)", 0.0, 20.0, 0.5 * MEAN_WT, 0.1)
-        d_rep2 = st.number_input("Type 2 depth criterion (mm)", 0.0, 20.0, 0.7 * MEAN_WT, 0.1)
-        fpr_rep1 = st.number_input("Type 1 pressure factor", 0.0, 10.0, 1.25, 0.05)
-        fpr_rep2 = st.number_input("Type 2 pressure factor", 0.0, 10.0, 1.10, 0.05)
-        pipe_length = st.number_input("Pipe length (km)", 0.001, 10000.0, 1.0, 0.1)
-        random_seed = st.number_input("Random seed", 0, 1000000, 0, 1)
 
     st.divider()
     with st.expander("Create a QR code"):

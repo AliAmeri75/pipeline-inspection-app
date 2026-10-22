@@ -53,6 +53,11 @@ the packages in `requirements.txt`.
 The application opens on a separate **Introduction** page. Use the navigation
 menu to open **Scheduling and VoI**.
 
+The scheduling sidebar uses collapsible sections for simulation settings,
+pipeline class and safety, inspection/excavation intervals, initial cracks and
+crack initiation, crack growth, the ILI measurement model (POD and sizing
+errors), repair criteria, repair effectiveness, and costs.
+
 ## Edit the introduction page
 
 - Edit `content/ABSTRACT.md` to change the short abstract.
