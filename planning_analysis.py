@@ -96,9 +96,9 @@ def compare_ili_intervals_to_prior_safe(
                 "Prior safe cost ($M)": prior_cost,
                 "ILI interval (years)": ili_result["interval"],
                 "ILI cost ($M)": ili_cost,
-                "Cost difference / VoI ($M)": value,
                 "ILI safe": "Yes" if ili_is_safe else "No",
                 "ILI economically justified?": economically_justified,
+                "Cost difference / VoI ($M)": value,
             }
         )
     return rows
