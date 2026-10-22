@@ -25,7 +25,11 @@ from Simp_Sys_Thresh_J3_optimized import (
     PROPERTY_NAMES,
     run_flexible_simulation,
 )
-from planning_analysis import calculate_value_of_information, select_optimal_result
+from planning_analysis import (
+    calculate_value_of_information,
+    select_lowest_cost_result,
+    select_optimal_result,
+)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -44,6 +48,18 @@ PIPELINE_CLASS_SAFETY_LIMITS = {
     "Class 1": {
         "max_annual_leak_pof": DEFAULT_MAX_ANNUAL_LEAK_POF,
         "max_annual_burst_pof": DEFAULT_MAX_ANNUAL_BURST_POF,
+    },
+    "Class 2": {
+        "max_annual_leak_pof": 1e-3,
+        "max_annual_burst_pof": 1e-4,
+    },
+    "Class 3": {
+        "max_annual_leak_pof": 1e-4,
+        "max_annual_burst_pof": 1e-5,
+    },
+    "Class 4": {
+        "max_annual_leak_pof": 1e-5,
+        "max_annual_burst_pof": 1e-6,
     },
 }
 SAMPLE_COLUMNS = [
@@ -92,6 +108,20 @@ st.markdown(
     }
     .note { padding:.75rem .9rem; background:#e8efed; border-left:3px solid var(--teal);
             color:#425461; font-size:.84rem; margin:.4rem 0 .9rem; }
+    .result-matrix { background:white; border:1px solid var(--line); border-radius:12px;
+                     overflow:hidden; margin:.7rem 0 1rem; box-shadow:0 7px 22px rgba(16,36,61,.07); }
+    .result-matrix table { width:100%; border-collapse:collapse; font-size:.88rem; }
+    .result-matrix th { background:var(--ink); color:white; padding:.75rem .65rem;
+                        text-align:center; font-weight:700; }
+    .result-matrix td { padding:.78rem .65rem; text-align:center;
+                        border-top:1px solid #e5e9e8; }
+    .result-matrix td:first-child { text-align:left; font-weight:750; color:var(--ink); }
+    .result-matrix tr:nth-child(even) td { background:#f7f9f8; }
+    .badge-safe, .badge-unsafe { display:inline-block; padding:.18rem .55rem;
+                                border-radius:999px; font-weight:800; }
+    .badge-safe { color:#0f6a42; background:#dcf4e7; }
+    .badge-unsafe { color:#9b2d22; background:#fde5e1; }
+    .not-found { color:#9b2d22; font-weight:800; }
     .stButton > button[kind="primary"] { background:var(--teal); border-color:var(--teal); }
     </style>
     """,
@@ -308,6 +338,55 @@ def _safety_label(result):
     return "Safe" if result["is_safe"] else "Unsafe"
 
 
+def recommendation_matrix(prior_cost_optimal, prior_safe, ili_cost_optimal, ili_safe):
+    """Build a compact result matrix for cost and safety decisions."""
+
+    def row(method, cost_optimal, safe_result):
+        safety = _safety_label(cost_optimal)
+        badge_class = "badge-safe" if cost_optimal["is_safe"] else "badge-unsafe"
+        safe_interval = (
+            f"{safe_result['interval']} years"
+            if safe_result is not None
+            else '<span class="not-found">Not found</span>'
+        )
+        safe_cost = (
+            f"${safe_result['total_cpp']:.4f}M"
+            if safe_result is not None
+            else "—"
+        )
+        return f"""
+          <tr>
+            <td>{method}</td>
+            <td><b>{cost_optimal['interval']} years</b></td>
+            <td>${cost_optimal['total_cpp']:.4f}M</td>
+            <td><span class="{badge_class}">{safety}</span></td>
+            <td>{safe_interval}</td>
+            <td>{safe_cost}</td>
+          </tr>
+        """
+
+    return f"""
+      <div class="result-matrix">
+        <table>
+          <thead>
+            <tr>
+              <th>Planning method</th>
+              <th>Cost-optimal interval</th>
+              <th>Lowest cost</th>
+              <th>Safety at cost optimum</th>
+              <th>Minimum-cost safe interval</th>
+              <th>Safe cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {row('Prior excavation (no ILI)', prior_cost_optimal, prior_safe)}
+            {row('Pre-posterior (ILI-informed)', ili_cost_optimal, ili_safe)}
+          </tbody>
+        </table>
+      </div>
+    """
+
+
 def _cost_customdata(results):
     return np.asarray(
         [
@@ -432,7 +511,8 @@ def show_selectable_cost_figure(results, title, interval_label, total_label, key
 
 def annual_pof_figure(result, schedule_label):
     figure = base_figure(
-        f"Annual system POF at the optimal {result['interval']}-year {schedule_label.lower()} interval",
+        f"Annual system POF at the cost-optimal {result['interval']}-year "
+        f"{schedule_label.lower()} interval",
         "Year",
         "Annual probability of failure (per km-year)",
     )
@@ -632,7 +712,7 @@ with st.sidebar:
         class_limits = PIPELINE_CLASS_SAFETY_LIMITS.get(pipeline_class)
         widget_suffix = pipeline_class.lower().replace(" ", "_").replace("-", "_")
         if class_limits is not None:
-            st.caption("The annual POF limits are selected automatically for this class.")
+            st.caption("The study's annual POF limits are selected automatically for this class.")
             max_annual_leak_pof = st.number_input(
                 "Maximum annual leakage POF, PfL",
                 value=class_limits["max_annual_leak_pof"],
@@ -647,14 +727,15 @@ with st.sidebar:
                 disabled=True,
                 key=f"pfb_{widget_suffix}",
             )
+            st.caption(
+                "Classes 1–4 use an illustrative one-order-of-magnitude progression. "
+                "These are study assumptions, not values prescribed directly by CSA Z662. "
+                "[CSA Group research](https://www.csagroup.org/wp-content/uploads/"
+                "CSA-Group-Research-Pipeline-Safety-Factors-Exec-Summary.pdf) describes "
+                "the broader risk-consistent safety-class basis."
+            )
         else:
-            if pipeline_class == "User-defined":
-                st.info("Enter the two annual POF limits for this analysis.")
-            else:
-                st.warning(
-                    f"No verified safety limits have been supplied for {pipeline_class}. "
-                    "Enter them below before running the model."
-                )
+            st.info("Enter the two annual POF limits for this analysis.")
             max_annual_leak_pof = st.number_input(
                 "Maximum annual leakage POF, PfL",
                 min_value=0.0,
@@ -941,47 +1022,39 @@ if study and study.get("safety_signature") != current_safety_signature:
 if study:
     prior_results = study["prior_results"]
     ili_results = study["ili_results"]
-    prior_optimal, prior_has_safe = select_optimal_result(prior_results)
-    ili_optimal, ili_has_safe = select_optimal_result(ili_results)
+    prior_cost_optimal = select_lowest_cost_result(prior_results)
+    ili_cost_optimal = select_lowest_cost_result(ili_results)
+    prior_safe, prior_has_safe = select_optimal_result(prior_results)
+    ili_safe, ili_has_safe = select_optimal_result(ili_results)
     voi = (
-        calculate_value_of_information(prior_optimal, ili_optimal)
-        if prior_optimal is not None and ili_optimal is not None
+        calculate_value_of_information(prior_safe, ili_safe)
+        if prior_safe is not None and ili_safe is not None
         else None
     )
 
-    st.subheader("2. Minimum-cost safe schedules and VoI")
+    st.subheader("2. Cost-optimal and safe scheduling results")
     st.caption(
         f"{study['pipeline_class']} safety criteria: "
         f"PfL ≤ {study['max_annual_leak_pof']:.1e}; "
         f"PfB ≤ {study['max_annual_burst_pof']:.1e}."
     )
-    columns = st.columns(5)
-    columns[0].metric(
-        "Prior safe interval",
-        f"{prior_optimal['interval']} years" if prior_optimal else "Not found",
-    )
-    columns[1].metric(
-        "Minimum safe Cprior",
-        f"${prior_optimal['total_cpp']:.4f}M" if prior_optimal else "—",
-    )
-    columns[2].metric(
-        "ILI safe interval",
-        f"{ili_optimal['interval']} years" if ili_optimal else "Not found",
-    )
-    columns[3].metric(
-        "Minimum safe Cpp",
-        f"${ili_optimal['total_cpp']:.4f}M" if ili_optimal else "—",
-    )
-    columns[4].metric(
-        "Net VoI of ILI",
-        f"${voi['voi']:.4f}M" if voi else "Unavailable",
-        help="Minimum safe prior cost minus minimum safe ILI-informed lifecycle cost.",
+    st.markdown(
+        recommendation_matrix(
+            prior_cost_optimal, prior_safe, ili_cost_optimal, ili_safe
+        ),
+        unsafe_allow_html=True,
     )
     if voi is not None:
+        voi_columns = st.columns([1, 3])
+        voi_columns[0].metric(
+            "Net VoI of ILI",
+            f"${voi['voi']:.4f}M",
+            help="Minimum safe prior cost minus minimum safe ILI-informed lifecycle cost.",
+        )
         if voi["ili_justified"]:
-            st.success(voi["interpretation"])
+            voi_columns[1].success(voi["interpretation"])
         else:
-            st.warning(voi["interpretation"])
+            voi_columns[1].warning(voi["interpretation"])
         st.markdown(
             '<div class="note"><b>VoI = minimum safe prior excavation cost − minimum '
             'safe ILI-informed cost.</b> Each recommendation is the lowest-cost candidate '
@@ -995,10 +1068,11 @@ if study:
             missing.append("prior excavation")
         if not ili_has_safe:
             missing.append("ILI-informed")
-        st.error(
-            "No candidate interval satisfied both POF criteria for "
+        st.warning(
+            "Minimum-cost safe interval: **Not found** for "
             + " and ".join(missing)
-            + ". No unsafe interval is recommended. Test shorter intervals or revise the input assumptions."
+            + " within the tested range. The cost-optimal interval is still shown above "
+            + "with its Safe/Unsafe status."
         )
 
     comparison_tab, prior_tab, ili_tab = st.tabs(
@@ -1026,21 +1100,26 @@ if study:
         )
 
     with prior_tab:
-        prior_columns = st.columns(4)
+        prior_columns = st.columns(5)
         prior_columns[0].metric(
-            "Recommended interval",
-            f"{prior_optimal['interval']} years" if prior_optimal else "Not found",
+            "Cost-optimal interval",
+            f"{prior_cost_optimal['interval']} years",
         )
         prior_columns[1].metric(
-            "Minimum safe Cprior",
-            f"${prior_optimal['total_cpp']:.4f}M" if prior_optimal else "—",
+            "Lowest Cprior",
+            f"${prior_cost_optimal['total_cpp']:.4f}M",
         )
         prior_columns[2].metric(
-            "Expected interventions",
-            f"{prior_optimal['expected_repairs']:.3f}" if prior_optimal else "—",
+            "Safety at cost optimum",
+            _safety_label(prior_cost_optimal),
         )
         prior_columns[3].metric(
-            "Safety criteria", "Satisfied" if prior_optimal else "No safe candidate"
+            "Safe interval",
+            f"{prior_safe['interval']} years" if prior_safe else "Not found",
+        )
+        prior_columns[4].metric(
+            "Safe Cprior",
+            f"${prior_safe['total_cpp']:.4f}M" if prior_safe else "—",
         )
         show_selectable_cost_figure(
             prior_results,
@@ -1049,8 +1128,7 @@ if study:
             "Cprior",
             "prior_cost_selection",
         )
-        if prior_optimal is not None:
-            show_figure(annual_pof_figure(prior_optimal, "Excavation"))
+        show_figure(annual_pof_figure(prior_cost_optimal, "Excavation"))
         prior_table = results_table(prior_results, "Cprior")
         st.dataframe(
             prior_table.style.format(
@@ -1075,21 +1153,26 @@ if study:
             st.code(study["prior_log"] or "No simulation messages.")
 
     with ili_tab:
-        ili_columns = st.columns(4)
+        ili_columns = st.columns(5)
         ili_columns[0].metric(
-            "Recommended interval",
-            f"{ili_optimal['interval']} years" if ili_optimal else "Not found",
+            "Cost-optimal interval",
+            f"{ili_cost_optimal['interval']} years",
         )
         ili_columns[1].metric(
-            "Minimum safe Cpp",
-            f"${ili_optimal['total_cpp']:.4f}M" if ili_optimal else "—",
+            "Lowest Cpp",
+            f"${ili_cost_optimal['total_cpp']:.4f}M",
         )
         ili_columns[2].metric(
-            "Expected repairs",
-            f"{ili_optimal['expected_repairs']:.3f}" if ili_optimal else "—",
+            "Safety at cost optimum",
+            _safety_label(ili_cost_optimal),
         )
         ili_columns[3].metric(
-            "Safety criteria", "Satisfied" if ili_optimal else "No safe candidate"
+            "Safe interval",
+            f"{ili_safe['interval']} years" if ili_safe else "Not found",
+        )
+        ili_columns[4].metric(
+            "Safe Cpp",
+            f"${ili_safe['total_cpp']:.4f}M" if ili_safe else "—",
         )
         show_selectable_cost_figure(
             ili_results,
@@ -1098,8 +1181,7 @@ if study:
             "Cpp",
             "ili_cost_selection",
         )
-        if ili_optimal is not None:
-            show_figure(annual_pof_figure(ili_optimal, "ILI inspection"))
+        show_figure(annual_pof_figure(ili_cost_optimal, "ILI inspection"))
         ili_table = results_table(ili_results, "Cpp")
         st.dataframe(
             ili_table.style.format(

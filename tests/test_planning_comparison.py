@@ -6,7 +6,11 @@ import unittest
 
 import numpy as np
 
-from planning_analysis import calculate_value_of_information, select_optimal_result
+from planning_analysis import (
+    calculate_value_of_information,
+    select_lowest_cost_result,
+    select_optimal_result,
+)
 from Simp_Sys_Thresh_J3_optimized import (
     DEFAULT_MAX_ANNUAL_BURST_POF,
     DEFAULT_MAX_ANNUAL_LEAK_POF,
@@ -19,6 +23,15 @@ from Simp_Sys_Thresh_J3_optimized import (
 
 
 class PlanningComparisonTests(unittest.TestCase):
+    def test_cost_optimum_is_returned_even_when_it_is_unsafe(self):
+        results = [
+            {"interval": 5, "total_cpp": 1.0, "is_safe": False},
+            {"interval": 10, "total_cpp": 1.4, "is_safe": True},
+        ]
+        optimum = select_lowest_cost_result(results)
+        self.assertEqual(optimum["interval"], 5)
+        self.assertFalse(optimum["is_safe"])
+
     def test_class_one_defaults_preserve_original_safety_limits(self):
         self.assertEqual(
             safety_limits({}),

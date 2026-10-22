@@ -17,14 +17,32 @@ Click any cost-curve point to see the interval's total cost, failure cost
 ## Pipeline class and safety criteria
 
 The scheduling page applies separate maximum annual probabilities of failure
-for leakage (`PfL`) and burst (`PfB`). **Class 1** currently has the verified
-preset requested for this application: `PfL = 1e-2` and `PfB = 1e-3`.
+for leakage (`PfL`) and burst (`PfB`). The four built-in study presets use the
+requested one-order-of-magnitude progression:
 
-Classes 2–4 are visible in the selector but require their limits to be entered
-before the analysis can run because no verified presets have yet been supplied.
-This deliberately avoids assigning unsupported safety criteria. A
-**User-defined** option is also available. The selected limits are applied to
+| Class | Maximum PfL | Maximum PfB |
+|---|---:|---:|
+| Class 1 | `1e-2` | `1e-3` |
+| Class 2 | `1e-3` | `1e-4` |
+| Class 3 | `1e-4` | `1e-5` |
+| Class 4 | `1e-5` | `1e-6` |
+
+These values are transparent **study assumptions**, not a claim that CSA Z662
+prescribes this exact PfL/PfB table. CSA research describes consequence-based
+safety classes and risk-consistent safety factors, while published reliability
+research supports increasingly stringent reliability with higher class
+location but reports class- and pipeline-dependent implied probabilities:
+
+- [CSA Group: Development of a risk-consistent safety class system](https://www.csagroup.org/wp-content/uploads/CSA-Group-Research-Pipeline-Safety-Factors-Exec-Summary.pdf)
+- [Zhou, Siraj, and Gong (2015), DOI 10.1139/cjce-2015-0232](https://doi.org/10.1139/cjce-2015-0232)
+
+A **User-defined** option is also available. The selected limits are applied to
 both the prior and ILI-informed schedules and are shown on the annual POF plots.
+
+The results distinguish the lowest-cost tested interval from the lowest-cost
+safe interval. The lowest-cost interval is always shown together with its
+Safe/Unsafe status. If the tested range contains no safe interval, the safe
+interval is shown as **Not found** rather than hiding the cost optimum.
 
 ## Start locally
 

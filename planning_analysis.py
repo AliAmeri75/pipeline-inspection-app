@@ -6,6 +6,16 @@ from collections.abc import Sequence
 from typing import Any
 
 
+def select_lowest_cost_result(
+    results: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    """Return the lowest-cost tested interval, regardless of safety status."""
+
+    if not results:
+        raise ValueError("At least one scheduling result is required.")
+    return min(results, key=lambda result: float(result["total_cpp"]))
+
+
 def select_optimal_result(
     results: Sequence[dict[str, Any]],
 ) -> tuple[dict[str, Any] | None, bool]:
