@@ -114,6 +114,11 @@ DECISION_MODES = {ILI_DECISION_MODE, EXCAVATION_DECISION_MODE}
 # Sampling and crack-birth helpers
 # ---------------------------------------------------------------------------
 def exp_num(t, birth_rate):
+    """Return the expected new cracks in one joint over ``t`` years.
+
+    ``birth_rate`` is measured in cracks per joint-year. Crack initiation is
+    represented by a homogeneous Poisson process.
+    """
     return birth_rate * t
 
 

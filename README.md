@@ -49,7 +49,10 @@ Use one row for each unique joint or statistically identical joint group:
 - `mean_depths_mm`: semicolon-separated mean initial crack depths.
 - `WT_mean`, `WT_std`: wall-thickness distribution.
 - `Pservice_mean`, `Pservice_std`: service-pressure distribution.
-- `birth_rate`: crack-initiation rate per year.
+- `birth_rate`: optional joint-specific crack-initiation rate in cracks per
+  joint-year. Leave it blank to use the **Crack birth rate** entered in the
+  sidebar. The simulation treats initiation as a Poisson process, so a rate of
+  `0.01` means one new crack per 100 joint-years on average.
 
 For zero initial cracks, set `num_cracks` to zero and leave both size fields
 blank. Additional property columns can be supplied using the pattern

@@ -36,6 +36,7 @@ COLORS = {
     "violet": "#7556a6",
 }
 MODERN_CHART_WIDTH = Version(st.__version__) >= Version("1.51.0")
+DEFAULT_CRACK_BIRTH_RATE = 0.00008
 SAMPLE_COLUMNS = [
     "joint_id", "count", "num_cracks", "mean_lengths_mm", "mean_depths_mm",
     "WT_mean", "WT_std", "Pservice_mean", "Pservice_std", "birth_rate",
@@ -52,7 +53,9 @@ SAMPLE_DATA = pd.DataFrame(
             "WT_std": 0.60,
             "Pservice_mean": 936.0,
             "Pservice_std": 20.03,
-            "birth_rate": 0.00008,
+            # Blank means "use the visible sidebar rate". Users can enter a
+            # value here when a particular joint needs its own rate.
+            "birth_rate": np.nan,
         }
     ],
     columns=SAMPLE_COLUMNS,
@@ -579,6 +582,24 @@ with st.sidebar:
         help="These statistically identical joints are evaluated as one efficient group.",
     )
 
+    st.subheader("Crack initiation")
+    default_birth_rate = st.number_input(
+        "Crack birth rate (cracks per joint-year)",
+        min_value=0.0,
+        value=DEFAULT_CRACK_BIRTH_RATE,
+        step=0.00001,
+        format="%.6f",
+        help=(
+            "Expected number of newly initiated cracks in one pipe joint during one year. "
+            "The simulation samples new cracks using a Poisson process. Set this to zero "
+            "to model no new crack initiation."
+        ),
+    )
+    st.caption(
+        "This rate is used for every joint unless a `birth_rate` override is entered "
+        "in the joint table."
+    )
+
     st.subheader("Candidate schedule intervals")
     interval_start = st.number_input("First interval", 1, 100, 5, 1)
     interval_end = st.number_input("Last interval", 1, 100, 20, 1)
@@ -593,11 +614,6 @@ with st.sidebar:
         std_c = st.number_input("Std. Paris C", 0.0, 1e-8, 1.35e-13, 1e-14, format="%.3e")
         delta_s = st.number_input("Stress range, ΔS", 0.01, 1000.0, 2.0, 0.1)
         paris_m = st.number_input("Paris exponent, m", 0.1, 10.0, 3.0, 0.1)
-        default_birth_rate = st.number_input(
-            "Default crack birth rate (/year)", 0.0, 1.0, 0.00008, 0.00001,
-            format="%.5f",
-        )
-
     with st.expander("Costs (million USD)"):
         inspection_cost = st.number_input(
             "ILI inspection cost per event", 0.0, 1000.0, 0.015, 0.005,
@@ -645,7 +661,9 @@ st.subheader("1. Define pipe joints and initial cracks")
 st.markdown(
     '<div class="note">Use one row per joint. Separate multiple crack means with '
     'semicolons—for example, <b>40; 45</b>. A blank size list is required when '
-    '<b>num_cracks = 0</b>. The <b>count</b> column can represent identical joints efficiently.</div>',
+    '<b>num_cracks = 0</b>. The <b>count</b> column can represent identical joints efficiently. '
+    'Leave <b>birth_rate</b> blank to use the sidebar value, or enter a rate to override it '
+    'for that joint or group.</div>',
     unsafe_allow_html=True,
 )
 st.markdown(
@@ -677,6 +695,17 @@ try:
         width="stretch",
         hide_index=True,
         key=editor_key,
+        column_config={
+            "birth_rate": st.column_config.NumberColumn(
+                "birth_rate (cracks/joint-year)",
+                help=(
+                    "Optional joint-specific crack birth rate. Leave blank to use the "
+                    "sidebar value."
+                ),
+                min_value=0.0,
+                format="%.6f",
+            ),
+        },
     )
 except Exception as exc:
     st.error(f"The CSV could not be read: {exc}")
@@ -706,7 +735,7 @@ try:
                 "Joint/group": joint["name"],
                 "Count": joint["count"],
                 "Cracks per joint": len(joint["cracks"]),
-                "Birth rate (/year)": joint["birth_rate"],
+                "Birth rate (cracks/joint-year)": joint["birth_rate"],
             }
             for joint in joints
         ]
@@ -718,11 +747,19 @@ except ValueError as exc:
     joints = []
     total_joints = total_initial_cracks = 0
 
-metric_columns = st.columns(4)
+expected_new_cracks = sum(
+    joint["count"] * joint["birth_rate"] * horizon for joint in joints
+)
+metric_columns = st.columns(5)
 metric_columns[0].metric("Physical joints", total_joints)
 metric_columns[1].metric("Initial cracks", total_initial_cracks)
-metric_columns[2].metric("Candidate intervals", len(intervals))
-metric_columns[3].metric("Monte Carlo samples", f"{samples:,}")
+metric_columns[2].metric(
+    "Expected new cracks",
+    f"{expected_new_cracks:.3f}",
+    help="Poisson mean over all represented joints and the full analysis horizon.",
+)
+metric_columns[3].metric("Candidate intervals", len(intervals))
+metric_columns[4].metric("Monte Carlo samples", f"{samples:,}")
 
 simulation_units = len(joints)
 work_units = 2 * simulation_units * samples * (horizon + 1) * max(len(intervals), 1)
