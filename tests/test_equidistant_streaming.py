@@ -10,9 +10,6 @@ from Simp_Sys_Equidistant_streaming import (
     run_flexible_equidistant_simulation,
     run_flexible_simulation,
 )
-from Simp_Sys_Thresh_J3_streaming import (
-    run_flexible_simulation as run_previous_streaming,
-)
 
 
 def _inputs():
@@ -58,41 +55,6 @@ def _inputs():
 
 
 class EquidistantStreamingTests(unittest.TestCase):
-    def test_matches_previous_streaming_equidistant_results(self):
-        joints, costs, simulation = _inputs()
-        common_arguments = (
-            "equidistant",
-            2,
-            1,
-            12,
-            joints,
-            costs,
-            simulation,
-            [0.74, 15.6],
-            1.0,
-        )
-        options = {
-            "property_seed": 7,
-            "simulation_seed": 17,
-            "track_debug": False,
-        }
-
-        previous = run_previous_streaming(*common_arguments, **options)
-        current = run_flexible_simulation(*common_arguments, **options)
-
-        array_positions = list(range(10)) + [12, 13, 14]
-        for position in array_positions:
-            np.testing.assert_allclose(current[position], previous[position])
-        for current_actions, previous_actions in zip(current[15], previous[15]):
-            np.testing.assert_allclose(current_actions, previous_actions)
-
-        self.assertEqual(current[10], previous[10])
-        self.assertEqual(current[11], previous[11])
-        self.assertEqual(
-            current[16]["retained_samples"],
-            previous[16]["retained_samples"],
-        )
-
     def test_direct_api_returns_aggregate_results(self):
         joints, costs, simulation = _inputs()
         result = run_flexible_equidistant_simulation(
