@@ -109,14 +109,12 @@ blank. Additional property columns can be supplied using the pattern
 one of `alpha`, `WT`, `Neq`, `C`, `SMYS`, `SMTS`, `CVN`, `E`, `err`, or
 `Pservice`.
 
-## Public deployment and QR code
+## Public deployment
 
 1. Put this folder in a GitHub repository.
 2. Create an app at https://share.streamlit.io.
 3. Select the repository and `streamlit_app.py` as the entrypoint.
 4. Make the app public and copy its stable `streamlit.app` URL.
-5. Paste that URL into **Create a QR code** in the app sidebar, then download
-   the PNG for a poster or presentation.
 
 The default one-joint, 1,000-sample example is intended for an interactive
 demonstration. Large numbers of individually different joints require

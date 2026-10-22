@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import qrcode
 import streamlit as st
 from packaging.version import Version
 
@@ -643,13 +642,6 @@ def comparison_table(prior_safe_result, ili_results):
     )
 
 
-def qr_png(url):
-    image = qrcode.make(url)
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
-
-
 st.markdown(
     """
     <div class="hero">
@@ -885,16 +877,6 @@ with st.sidebar:
         leak_cost = st.number_input("Leak failure cost", 0.0, 10000.0, 2.0, 0.5)
         burst_cost = st.number_input("Burst failure cost", 0.001, 10000.0, 20.0, 1.0)
         discount_percent = st.number_input("Discount rate (%)", 0.0, 100.0, 4.0, 0.5)
-
-    st.divider()
-    with st.expander("Create a QR code"):
-        st.caption("After deployment, paste the public app address here.")
-        public_url = st.text_input("Public app URL", placeholder="https://your-app.streamlit.app")
-        if public_url.startswith(("https://", "http://")):
-            qr_bytes = qr_png(public_url)
-            st.image(qr_bytes, caption="Scan to open the application", width=180)
-            st.download_button("Download QR code", qr_bytes, "pipeline_app_qr.png", "image/png")
-
 
 st.subheader("1. Define pipe joints and initial cracks")
 st.markdown(
