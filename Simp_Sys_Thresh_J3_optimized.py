@@ -108,6 +108,9 @@ BURST_VARIABLE_NAMES = ["FL", "FD", "WT", "SMYS", "SMTS", "CVN", "E"]
 ILI_DECISION_MODE = "ili"
 EXCAVATION_DECISION_MODE = "excavation"
 DECISION_MODES = {ILI_DECISION_MODE, EXCAVATION_DECISION_MODE}
+POD_DEPTH_ONLY_MODEL = "depth_only"
+POD_DEPTH_LENGTH_MODEL = "depth_length"
+POD_MODELS = {POD_DEPTH_ONLY_MODEL, POD_DEPTH_LENGTH_MODEL}
 DEFAULT_MAX_ANNUAL_LEAK_POF = 1e-2
 DEFAULT_MAX_ANNUAL_BURST_POF = 1e-3
 
@@ -308,8 +311,52 @@ def obs_D_t(value, error, shift, n):
     return Normal.Normal_Samples(value, error, shift, n)
 
 
-def POD(depth, q_pod):
-    return 1 - np.exp(-q_pod * depth)
+def POD(
+    depth,
+    q_pod,
+    length=None,
+    pod_model=POD_DEPTH_ONLY_MODEL,
+    q_length=0.0,
+):
+    """Return the probability that ILI detects a crack.
+
+    ``depth_only`` preserves the original model::
+
+        POD = 1 - exp(-q_depth * depth)
+
+    ``depth_length`` adds the contribution of crack length::
+
+        POD = 1 - exp(-(q_depth * depth + q_length * length))
+
+    Both coefficients must be non-negative and use inverse millimetres when
+    depth and length are supplied in millimetres.  The second form is a simple,
+    monotonic screening model; its coefficients should be calibrated against
+    the selected ILI tool's validation or excavation data.
+    """
+    if pod_model not in POD_MODELS:
+        raise ValueError(
+            f"Unknown POD model {pod_model!r}. Expected one of {sorted(POD_MODELS)}."
+        )
+    if q_pod < 0 or q_length < 0:
+        raise ValueError("POD coefficients must be non-negative.")
+
+    depth_array = np.asarray(depth, dtype=float)
+    if np.any(depth_array < 0):
+        raise ValueError("Crack depth must be non-negative.")
+
+    exponent = q_pod * depth_array
+    if pod_model == POD_DEPTH_LENGTH_MODEL:
+        if length is None:
+            raise ValueError(
+                "Crack length is required for the depth-and-length POD model."
+            )
+        length_array = np.asarray(length, dtype=float)
+        if np.any(length_array < 0):
+            raise ValueError("Crack length must be non-negative.")
+        exponent = exponent + q_length * length_array
+
+    probability = np.clip(1 - np.exp(-exponent), 0.0, 1.0)
+    return float(probability) if probability.ndim == 0 else probability
 
 
 def simulate_cracks_vectorized(
@@ -648,7 +695,14 @@ def Joint_planning_step(
             # Pre-posterior strategy: ILI detection and noisy measurements
             # determine whether the joint receives a repair action.
             for loc in active[xk]:
-                if np.random.rand() > POD(D[loc, xk], q_pod):
+                detection_probability = POD(
+                    D[loc, xk],
+                    sim.get("pod_depth_coefficient", q_pod),
+                    length=L[loc, xk],
+                    pod_model=sim.get("pod_model", POD_DEPTH_ONLY_MODEL),
+                    q_length=sim.get("pod_length_coefficient", 0.0),
+                )
+                if np.random.rand() > detection_probability:
                     continue
                 measured_d = obs_D_t(D[loc, xk], S_err[0], 0, 1)[0]
                 measured_l = obs_D_t(L[loc, xk], S_err[1], 0, 1)[0]

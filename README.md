@@ -58,6 +58,18 @@ pipeline class and safety, inspection/excavation intervals, initial cracks and
 crack initiation, crack growth, the ILI measurement model (POD and sizing
 errors), repair criteria, repair effectiveness, and costs.
 
+The ILI measurement section offers two probability-of-detection models:
+
+- **Depth only:** `POD = 1 - exp(-qd × depth)` (the original behavior).
+- **Depth and length:** `POD = 1 - exp[-(qd × depth + qL × length)]`.
+
+Both coefficients are user inputs in inverse millimetres. The depth-and-length
+form is a simple monotonic screening model, not a universal ILI-tool curve;
+calibrate `qd` and `qL` using vendor qualification, dig, or excavation data.
+The choice to include both dimensions is supported by a field UT-ILI study
+reporting that SCC detection increases with maximum depth and longest
+interacting length: [Lu, Skow, and Keane (2014)](https://www.cfertech.com/2014/09/29/assessing-the-probability-of-detecting-crack-features-using-ultrasonic-in-line-inspection-tool-run-results-and-excavation-data/).
+
 ## Edit the introduction page
 
 - Edit `content/ABSTRACT.md` to change the short abstract.

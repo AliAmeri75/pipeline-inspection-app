@@ -22,6 +22,9 @@ from Simp_Sys_Thresh_J3_optimized import (
     EXCAVATION_DECISION_MODE,
     ILI_DECISION_MODE,
     MEAN_WT,
+    POD,
+    POD_DEPTH_LENGTH_MODEL,
+    POD_DEPTH_ONLY_MODEL,
     PROPERTY_NAMES,
     run_flexible_simulation,
 )
@@ -797,7 +800,51 @@ with st.sidebar:
             "POD controls whether ILI detects a crack; sizing errors describe the "
             "uncertainty in the reported crack dimensions."
         )
-        q_pod = st.number_input("Probability-of-detection parameter, q", 0.0, 100.0, 2.0, 0.1)
+        pod_model = st.selectbox(
+            "POD model",
+            options=[POD_DEPTH_ONLY_MODEL, POD_DEPTH_LENGTH_MODEL],
+            format_func=lambda value: {
+                POD_DEPTH_ONLY_MODEL: "Depth only (current model)",
+                POD_DEPTH_LENGTH_MODEL: "Depth and length",
+            }[value],
+            help=(
+                "Choose whether detection depends only on crack depth or on both "
+                "crack depth and crack length."
+            ),
+        )
+        q_pod = st.number_input(
+            "Depth coefficient, qd (1/mm)",
+            min_value=0.0,
+            max_value=100.0,
+            value=2.0,
+            step=0.1,
+            help="Higher qd gives a higher POD for the same crack depth.",
+        )
+        if pod_model == POD_DEPTH_LENGTH_MODEL:
+            q_length_pod = st.number_input(
+                "Length coefficient, qL (1/mm)",
+                min_value=0.0,
+                max_value=10.0,
+                value=0.01,
+                step=0.01,
+                format="%.3f",
+                help="Higher qL gives a higher POD for the same crack length.",
+            )
+            st.latex(r"POD(d,L)=1-\exp[-(q_d d+q_L L)]")
+        else:
+            q_length_pod = 0.0
+            st.latex(r"POD(d)=1-\exp(-q_d d)")
+        example_pod = POD(
+            1.0,
+            q_pod,
+            length=40.0,
+            pod_model=pod_model,
+            q_length=q_length_pod,
+        )
+        st.caption(
+            f"Example POD for a 1 mm deep, 40 mm long crack: {example_pod:.1%}. "
+            "Calibrate the coefficients using ILI vendor qualification or excavation data."
+        )
         length_error = st.number_input(
             "ILI crack-length error std. (mm)", 0.0, 100.0, 15.6, 0.1
         )
@@ -1003,6 +1050,9 @@ model = {
         "max_annual_burst_pof": (
             float(max_annual_burst_pof) if safety_criteria_valid else np.nan
         ),
+        "pod_model": pod_model,
+        "pod_depth_coefficient": float(q_pod),
+        "pod_length_coefficient": float(q_length_pod),
         "resample_growth_each_step": False,
     },
 }
