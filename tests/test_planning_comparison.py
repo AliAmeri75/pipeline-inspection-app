@@ -8,13 +8,38 @@ import numpy as np
 
 from planning_analysis import calculate_value_of_information, select_optimal_result
 from Simp_Sys_Thresh_J3_optimized import (
+    DEFAULT_MAX_ANNUAL_BURST_POF,
+    DEFAULT_MAX_ANNUAL_LEAK_POF,
     EXCAVATION_DECISION_MODE,
     ILI_DECISION_MODE,
+    exceeds_safety_criteria,
     run_flexible_simulation,
+    safety_limits,
 )
 
 
 class PlanningComparisonTests(unittest.TestCase):
+    def test_class_one_defaults_preserve_original_safety_limits(self):
+        self.assertEqual(
+            safety_limits({}),
+            (DEFAULT_MAX_ANNUAL_LEAK_POF, DEFAULT_MAX_ANNUAL_BURST_POF),
+        )
+        self.assertFalse(exceeds_safety_criteria(1e-2, 1e-3, {}))
+        self.assertTrue(exceeds_safety_criteria(1.01e-2, 1e-3, {}))
+        self.assertTrue(exceeds_safety_criteria(1e-2, 1.01e-3, {}))
+
+    def test_class_specific_safety_limits_are_used(self):
+        criteria = {
+            "max_annual_leak_pof": 2e-2,
+            "max_annual_burst_pof": 2e-3,
+        }
+        self.assertFalse(exceeds_safety_criteria(1.5e-2, 1.5e-3, criteria))
+        self.assertTrue(exceeds_safety_criteria(2.1e-2, 1.5e-3, criteria))
+
+    def test_invalid_safety_limit_is_rejected(self):
+        with self.assertRaises(ValueError):
+            safety_limits({"max_annual_leak_pof": 1.1})
+
     def test_optimization_prefers_safe_candidates(self):
         results = [
             {"interval": 5, "total_cpp": 1.0, "is_safe": False},

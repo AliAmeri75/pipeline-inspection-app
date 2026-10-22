@@ -17,6 +17,8 @@ from packaging.version import Version
 
 from Simp_Sys_Thresh_J3_optimized import (
     DEFAULT_PROPERTY_SPECS,
+    DEFAULT_MAX_ANNUAL_BURST_POF,
+    DEFAULT_MAX_ANNUAL_LEAK_POF,
     EXCAVATION_DECISION_MODE,
     ILI_DECISION_MODE,
     MEAN_WT,
@@ -37,6 +39,13 @@ COLORS = {
 }
 MODERN_CHART_WIDTH = Version(st.__version__) >= Version("1.51.0")
 DEFAULT_CRACK_BIRTH_RATE = 0.00008
+PIPELINE_CLASSES = ["Class 1", "Class 2", "Class 3", "Class 4", "User-defined"]
+PIPELINE_CLASS_SAFETY_LIMITS = {
+    "Class 1": {
+        "max_annual_leak_pof": DEFAULT_MAX_ANNUAL_LEAK_POF,
+        "max_annual_burst_pof": DEFAULT_MAX_ANNUAL_BURST_POF,
+    },
+}
 SAMPLE_COLUMNS = [
     "joint_id", "count", "num_cracks", "mean_lengths_mm", "mean_depths_mm",
     "WT_mean", "WT_std", "Pservice_mean", "Pservice_std", "birth_rate",
@@ -186,7 +195,7 @@ def table_to_joints(table, growth, default_birth_rate, extra_crack_free):
     return joints
 
 
-def unpack_result(raw, interval, decision_mode):
+def unpack_result(raw, interval, decision_mode, sim_params):
     (
         times, leak_pof, burst_pof, leak_hazard, burst_hazard, inspections,
         cpp, cff, crr, cii, is_safe, unsafe_times,
@@ -195,6 +204,8 @@ def unpack_result(raw, interval, decision_mode):
     return {
         "interval": interval,
         "decision_mode": decision_mode,
+        "max_annual_leak_pof": sim_params["max_annual_leak_pof"],
+        "max_annual_burst_pof": sim_params["max_annual_burst_pof"],
         "times": times,
         "leak_pof": leak_pof,
         "burst_pof": burst_pof,
@@ -250,7 +261,7 @@ def run_interval_study(joints, intervals, model, decision_mode):
                 track_debug=False,
                 decision_mode=decision_mode,
             )
-        results.append(unpack_result(raw, interval, decision_mode))
+        results.append(unpack_result(raw, interval, decision_mode, sim))
     progress.progress(1.0, text=f"{method_label.capitalize()} optimization complete")
     return results, log.getvalue()
 
@@ -399,6 +410,10 @@ def show_selected_cost(result, total_label):
         st.success("Safe — this interval satisfies both probability-of-failure criteria.")
     else:
         st.error("Unsafe — this interval exceeds at least one probability-of-failure criterion.")
+    st.caption(
+        f"Limits used: PfL ≤ {result['max_annual_leak_pof']:.1e}; "
+        f"PfB ≤ {result['max_annual_burst_pof']:.1e}."
+    )
 
 
 def show_selectable_cost_figure(results, title, interval_label, total_label, key):
@@ -441,10 +456,22 @@ def annual_pof_figure(result, schedule_label):
             marker={"size": 5},
         )
     )
-    figure.add_hline(y=1e-2, line_dash="dot", line_color=COLORS["blue"],
-                     annotation_text="Leak criterion")
-    figure.add_hline(y=1e-3, line_dash="dash", line_color=COLORS["coral"],
-                     annotation_text="Burst criterion")
+    leak_limit = result["max_annual_leak_pof"]
+    burst_limit = result["max_annual_burst_pof"]
+    if leak_limit > 0:
+        figure.add_hline(
+            y=leak_limit,
+            line_dash="dot",
+            line_color=COLORS["blue"],
+            annotation_text=f"PfL limit = {leak_limit:.1e}",
+        )
+    if burst_limit > 0:
+        figure.add_hline(
+            y=burst_limit,
+            line_dash="dash",
+            line_color=COLORS["coral"],
+            annotation_text=f"PfB limit = {burst_limit:.1e}",
+        )
     for inspection in result["inspections"]:
         figure.add_vline(x=inspection, line_dash="dot", line_color=COLORS["teal"],
                          opacity=0.45)
@@ -599,6 +626,62 @@ with st.sidebar:
         "This rate is used for every joint unless a `birth_rate` override is entered "
         "in the joint table."
     )
+
+    with st.expander("Pipeline class and safety criteria", expanded=True):
+        pipeline_class = st.selectbox("Pipeline class", PIPELINE_CLASSES)
+        class_limits = PIPELINE_CLASS_SAFETY_LIMITS.get(pipeline_class)
+        widget_suffix = pipeline_class.lower().replace(" ", "_").replace("-", "_")
+        if class_limits is not None:
+            st.caption("The annual POF limits are selected automatically for this class.")
+            max_annual_leak_pof = st.number_input(
+                "Maximum annual leakage POF, PfL",
+                value=class_limits["max_annual_leak_pof"],
+                format="%.1e",
+                disabled=True,
+                key=f"pfl_{widget_suffix}",
+            )
+            max_annual_burst_pof = st.number_input(
+                "Maximum annual burst POF, PfB",
+                value=class_limits["max_annual_burst_pof"],
+                format="%.1e",
+                disabled=True,
+                key=f"pfb_{widget_suffix}",
+            )
+        else:
+            if pipeline_class == "User-defined":
+                st.info("Enter the two annual POF limits for this analysis.")
+            else:
+                st.warning(
+                    f"No verified safety limits have been supplied for {pipeline_class}. "
+                    "Enter them below before running the model."
+                )
+            max_annual_leak_pof = st.number_input(
+                "Maximum annual leakage POF, PfL",
+                min_value=0.0,
+                max_value=1.0,
+                value=None,
+                placeholder="Enter the PfL limit",
+                format="%.1e",
+                key=f"pfl_{widget_suffix}",
+            )
+            max_annual_burst_pof = st.number_input(
+                "Maximum annual burst POF, PfB",
+                min_value=0.0,
+                max_value=1.0,
+                value=None,
+                placeholder="Enter the PfB limit",
+                format="%.1e",
+                key=f"pfb_{widget_suffix}",
+            )
+        safety_criteria_valid = (
+            max_annual_leak_pof is not None and max_annual_burst_pof is not None
+        )
+        if safety_criteria_valid:
+            st.caption(
+                "A schedule is Safe only when "
+                f"PfL ≤ {max_annual_leak_pof:.1e} and "
+                f"PfB ≤ {max_annual_burst_pof:.1e}."
+            )
 
     st.subheader("Candidate schedule intervals")
     interval_start = st.number_input("First interval", 1, 100, 5, 1)
@@ -802,11 +885,24 @@ model = {
         "lifetime_arr": [0, int(coat_period), int(sleeve_period)],
         "df_arr": [1, float(coat_df), float(sleeve_df)],
         "threshold": 1e-3,
+        "max_annual_leak_pof": (
+            float(max_annual_leak_pof) if safety_criteria_valid else np.nan
+        ),
+        "max_annual_burst_pof": (
+            float(max_annual_burst_pof) if safety_criteria_valid else np.nan
+        ),
         "resample_growth_each_step": False,
     },
 }
 
-run_disabled = not joints or not intervals or not allow_heavy
+current_safety_signature = (
+    pipeline_class,
+    float(max_annual_leak_pof) if safety_criteria_valid else None,
+    float(max_annual_burst_pof) if safety_criteria_valid else None,
+)
+run_disabled = (
+    not joints or not intervals or not allow_heavy or not safety_criteria_valid
+)
 if st.button(
     "Run prior + pre-posterior comparison", type="primary", disabled=run_disabled
 ):
@@ -826,12 +922,22 @@ if st.button(
             "ili_log": ili_log,
             "joint_count": total_joints,
             "sample_count": samples,
+            "pipeline_class": pipeline_class,
+            "max_annual_leak_pof": float(max_annual_leak_pof),
+            "max_annual_burst_pof": float(max_annual_burst_pof),
+            "safety_signature": current_safety_signature,
         }
     except Exception as exc:
         st.exception(exc)
 
 
 study = st.session_state.get("planning_comparison")
+if study and study.get("safety_signature") != current_safety_signature:
+    st.info(
+        "The pipeline class or safety limits changed. Run the comparison again "
+        "to update the recommendations."
+    )
+    study = None
 if study:
     prior_results = study["prior_results"]
     ili_results = study["ili_results"]
@@ -844,6 +950,11 @@ if study:
     )
 
     st.subheader("2. Minimum-cost safe schedules and VoI")
+    st.caption(
+        f"{study['pipeline_class']} safety criteria: "
+        f"PfL ≤ {study['max_annual_leak_pof']:.1e}; "
+        f"PfB ≤ {study['max_annual_burst_pof']:.1e}."
+    )
     columns = st.columns(5)
     columns[0].metric(
         "Prior safe interval",

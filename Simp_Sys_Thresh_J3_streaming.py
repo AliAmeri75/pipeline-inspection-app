@@ -527,7 +527,9 @@ def _run_fixed_schedule(
     unsafe_times = [
         (time_value, system_burst_hazard[index], system_burst_pofs[index])
         for index, time_value in enumerate(times)
-        if system_burst_hazard[index] > 1e-3 or system_leak_hazard[index] > 1e-2
+        if base.exceeds_safety_criteria(
+            system_leak_hazard[index], system_burst_hazard[index], sim_params
+        )
     ]
 
     if debug is None:

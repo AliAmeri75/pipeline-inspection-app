@@ -833,6 +833,7 @@ def _finalize_result(
     times: np.ndarray,
     inspection_times: np.ndarray,
     costs: dict[str, float],
+    sim_params: dict[str, Any],
     requested_samples: int,
     debug: dict[str, Any] | None,
     debug_group: int,
@@ -863,8 +864,11 @@ def _finalize_result(
             system_burst_probability[time_index],
         )
         for time_index, time_value in enumerate(times)
-        if system_burst_hazard[time_index] > 1e-3
-        or system_leak_hazard[time_index] > 1e-2
+        if model.exceeds_safety_criteria(
+            system_leak_hazard[time_index],
+            system_burst_hazard[time_index],
+            sim_params,
+        )
     ]
 
     action_probabilities = totals.action_counts / retained
@@ -1030,6 +1034,7 @@ def run_equidistant_simulation(
         times=times,
         inspection_times=inspection_times,
         costs=costs,
+        sim_params=sim_params,
         requested_samples=int(nx),
         debug=debug,
         debug_group=debug_group,

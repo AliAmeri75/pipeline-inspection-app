@@ -108,6 +108,8 @@ BURST_VARIABLE_NAMES = ["FL", "FD", "WT", "SMYS", "SMTS", "CVN", "E"]
 ILI_DECISION_MODE = "ili"
 EXCAVATION_DECISION_MODE = "excavation"
 DECISION_MODES = {ILI_DECISION_MODE, EXCAVATION_DECISION_MODE}
+DEFAULT_MAX_ANNUAL_LEAK_POF = 1e-2
+DEFAULT_MAX_ANNUAL_BURST_POF = 1e-3
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +444,32 @@ def combined_hazard(leak_hazard, burst_hazard, costs):
     if costs["Cf_burst"] <= 0:
         raise ValueError("Cf_burst must be positive for the combined-hazard threshold.")
     return leak_hazard * costs["Cf_leak"] / costs["Cf_burst"] + burst_hazard
+
+
+def safety_limits(sim_params):
+    """Return and validate the maximum annual leakage and burst POFs.
+
+    The defaults preserve the original model behaviour. Applications can pass
+    class-specific values through ``sim_params`` using
+    ``max_annual_leak_pof`` and ``max_annual_burst_pof``.
+    """
+    leak_limit = float(
+        sim_params.get("max_annual_leak_pof", DEFAULT_MAX_ANNUAL_LEAK_POF)
+    )
+    burst_limit = float(
+        sim_params.get("max_annual_burst_pof", DEFAULT_MAX_ANNUAL_BURST_POF)
+    )
+    if not 0 <= leak_limit <= 1:
+        raise ValueError("max_annual_leak_pof must be between 0 and 1.")
+    if not 0 <= burst_limit <= 1:
+        raise ValueError("max_annual_burst_pof must be between 0 and 1.")
+    return leak_limit, burst_limit
+
+
+def exceeds_safety_criteria(leak_annual_pof, burst_annual_pof, sim_params):
+    """Return whether either class-specific annual POF limit is exceeded."""
+    leak_limit, burst_limit = safety_limits(sim_params)
+    return leak_annual_pof > leak_limit or burst_annual_pof > burst_limit
 
 
 def _output_path(output_dir, filename):
@@ -966,7 +994,9 @@ def run_simulation(
                 if previous_burst < 1 else 0
             ) / costs["pipe_length_km"]
 
-        if system_burst_hazard[k] > 1e-3 or system_leak_hazard[k] > 1e-2:
+        if exceeds_safety_criteria(
+            system_leak_hazard[k], system_burst_hazard[k], sim_params
+        ):
             unsafe_times.append((t, system_burst_hazard[k], system_burst_pofs[k]))
 
         threshold_exceeded = (

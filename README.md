@@ -14,6 +14,18 @@ is never presented as the optimum. It reports net VoI as:
 Click any cost-curve point to see the interval's total cost, failure cost
 (`Cf`), repair cost (`Cr`), and its **Safe** or **Unsafe** status.
 
+## Pipeline class and safety criteria
+
+The scheduling page applies separate maximum annual probabilities of failure
+for leakage (`PfL`) and burst (`PfB`). **Class 1** currently has the verified
+preset requested for this application: `PfL = 1e-2` and `PfB = 1e-3`.
+
+Classes 2–4 are visible in the selector but require their limits to be entered
+before the analysis can run because no verified presets have yet been supplied.
+This deliberately avoids assigning unsupported safety criteria. A
+**User-defined** option is also available. The selected limits are applied to
+both the prior and ILI-informed schedules and are shown on the annual POF plots.
+
 ## Start locally
 
 On macOS, double-click `run_app.command`. On Windows, double-click
