@@ -670,7 +670,7 @@ with st.sidebar:
     st.header("Analysis settings")
 
     with st.expander("Simulation settings", expanded=True):
-        samples = st.number_input("Monte Carlo samples", 100, 5000, 1000, 100)
+        samples = st.number_input("Monte Carlo samples", 100, 10000, 1000, 100)
         horizon = st.number_input("Analysis horizon (years)", 5, 100, 30, 5)
         pipe_length = st.number_input("Pipe length (km)", 0.001, 10000.0, 1.0, 0.1)
         random_seed = st.number_input("Random seed", 0, 1000000, 0, 1)
