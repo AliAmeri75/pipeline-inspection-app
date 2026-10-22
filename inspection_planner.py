@@ -125,6 +125,16 @@ st.markdown(
     .badge-safe { color:#0f6a42; background:#dcf4e7; }
     .badge-unsafe { color:#9b2d22; background:#fde5e1; }
     .not-found { color:#9b2d22; font-weight:800; }
+    .voi-card { border:1px solid; border-radius:12px; padding:1rem 1.15rem;
+                margin:.65rem 0 1rem; box-shadow:0 7px 22px rgba(16,36,61,.07); }
+    .voi-card .voi-label { font-size:.78rem; font-weight:800; letter-spacing:.06em;
+                           text-transform:uppercase; }
+    .voi-card .voi-value { font-size:2rem; line-height:1.15; font-weight:800;
+                           margin:.18rem 0; }
+    .voi-card .voi-message { font-size:.9rem; font-weight:650; }
+    .voi-positive { color:#0b5d36; background:#e5f5eb; border-color:#91cba8; }
+    .voi-negative { color:#8d241c; background:#fde9e6; border-color:#e7a59d; }
+    .voi-neutral { color:#425461; background:#eef1f2; border-color:#cbd3d6; }
     .stButton > button[kind="primary"] { background:var(--teal); border-color:var(--teal); }
     </style>
     """,
@@ -1132,7 +1142,7 @@ if study:
         else None
     )
 
-    st.subheader("2. Cost-optimal and safe scheduling results")
+    st.subheader("Cost-optimal and safe scheduling results")
     st.caption(
         f"{study['pipeline_class']} safety criteria: "
         f"PfL ≤ {study['max_annual_leak_pof']:.1e}; "
@@ -1144,16 +1154,19 @@ if study:
         )
     )
     if voi is not None:
-        voi_columns = st.columns([1, 3])
-        voi_columns[0].metric(
-            "Net VoI of ILI",
-            f"${voi['voi']:.4f}M",
-            help="Minimum safe prior cost minus minimum safe ILI-informed lifecycle cost.",
-        )
-        if voi["ili_justified"]:
-            voi_columns[1].success(voi["interpretation"])
+        if voi["voi"] > 0:
+            voi_class = "voi-positive"
+        elif voi["voi"] < 0:
+            voi_class = "voi-negative"
         else:
-            voi_columns[1].warning(voi["interpretation"])
+            voi_class = "voi-neutral"
+        st.html(
+            f'<div class="voi-card {voi_class}">'
+            '<div class="voi-label">Net VoI of ILI</div>'
+            f'<div class="voi-value">${voi["voi"]:.4f}M</div>'
+            f'<div class="voi-message">{voi["interpretation"]}</div>'
+            "</div>"
+        )
         st.markdown(
             '<div class="note"><b>VoI = minimum safe prior excavation cost − minimum '
             'safe ILI-informed cost.</b> Each recommendation is the lowest-cost candidate '
