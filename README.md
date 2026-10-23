@@ -93,6 +93,17 @@ demonstration data, not an operating pipeline alignment.
 
 ![Interactive map-to-joints input](docs/map-input-preview.jpg)
 
+## ILI inspection cost
+
+The **ILI inspection cost per km per event ($M/km)** input is a rate, not a
+per-joint cost. At every scheduled ILI year, the model adds:
+
+`inspection cost per km × mapped/manual pipeline length ÷ (1 + discount rate)^year`
+
+For example, an input of `0.01` for a 10 km pipeline costs `$0.10M` for each
+ILI event before discounting. The cost is included only in the ILI-informed
+schedule and is charged once per ILI event, regardless of the number of joints.
+
 ## Edit the introduction page
 
 - Edit `content/ABSTRACT.md` to change the short abstract.

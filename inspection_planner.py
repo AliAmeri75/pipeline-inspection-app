@@ -1226,9 +1226,17 @@ with st.sidebar:
         sleeve_period = st.number_input("Sleeve effective period (years)", 0, 100, 5, 1)
 
     with st.expander("Costs (million USD)"):
-        inspection_cost = st.number_input(
-            "ILI inspection cost per event", 0.0, 1000.0, 0.015, 0.005,
-            help="Applied only to the ILI-informed method.",
+        inspection_cost_per_km = st.number_input(
+            "ILI inspection cost per km per event ($M/km)",
+            0.0,
+            1000.0,
+            0.015,
+            0.001,
+            help=(
+                "Applied once across the full pipeline at every scheduled ILI. "
+                "For example, 0.01 $M/km for a 10 km pipeline gives 0.10 $M "
+                "per ILI event before discounting."
+            ),
         )
         repair_1_cost = st.number_input(
             "Type 1 intervention cost, Cr1", 0.0, 1000.0, 0.20, 0.05,
@@ -1409,7 +1417,7 @@ model = {
         "Cr2": float(repair_2_cost),
         "Cf_leak": float(leak_cost),
         "Cf_burst": float(burst_cost),
-        "total_insp_cost": float(inspection_cost),
+        "inspection_cost_per_km": float(inspection_cost_per_km),
         "pipe_length_km": float(pipe_length),
         "rate": float(discount_percent) / 100,
     },

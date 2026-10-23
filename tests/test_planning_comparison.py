@@ -138,7 +138,7 @@ class PlanningComparisonTests(unittest.TestCase):
             "Cr2": 0.05,
             "Cf_leak": 2.0,
             "Cf_burst": 20.0,
-            "total_insp_cost": 0.015,
+            "inspection_cost_per_km": 0.015,
             "pipe_length_km": 1.0,
             "rate": 0.04,
         }

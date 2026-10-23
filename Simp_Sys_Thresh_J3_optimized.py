@@ -493,6 +493,30 @@ def combined_hazard(leak_hazard, burst_hazard, costs):
     return leak_hazard * costs["Cf_leak"] / costs["Cf_burst"] + burst_hazard
 
 
+def ili_inspection_event_cost(costs):
+    """Return the undiscounted cost of one full-pipeline ILI event.
+
+    ``inspection_cost_per_km`` is expressed in million USD per kilometre per
+    ILI run. The event cost is therefore the rate multiplied by the inspected
+    pipeline length. ``total_insp_cost`` remains a compatibility fallback for
+    older scripts where the value already represented a fixed event total.
+    """
+    pipe_length_km = float(costs["pipe_length_km"])
+    if pipe_length_km <= 0:
+        raise ValueError("pipe_length_km must be positive.")
+    if "inspection_cost_per_km" in costs:
+        cost_per_km = float(costs["inspection_cost_per_km"])
+        if cost_per_km < 0:
+            raise ValueError("inspection_cost_per_km cannot be negative.")
+        return cost_per_km * pipe_length_km
+    if "total_insp_cost" in costs:
+        fixed_event_cost = float(costs["total_insp_cost"])
+        if fixed_event_cost < 0:
+            raise ValueError("total_insp_cost cannot be negative.")
+        return fixed_event_cost
+    raise KeyError("Provide inspection_cost_per_km in the cost inputs.")
+
+
 def safety_limits(sim_params):
     """Return and validate the maximum annual leakage and burst POFs.
 
@@ -998,7 +1022,7 @@ def run_simulation(
             decision_mode == ILI_DECISION_MODE
             and np.any(np.isclose(insp_times, t))
         ):
-            cii[k] = costs["total_insp_cost"] / (1 + costs["rate"]) ** t
+            cii[k] = ili_inspection_event_cost(costs) / (1 + costs["rate"]) ** t
 
         group_leak_pofs, group_burst_pofs = [], []
         for j, (cracks, count) in enumerate(zip(num_cracks_list, group_counts)):
@@ -1189,7 +1213,7 @@ def main():
     pipe_props = sample_pipe_properties(crack_groups, nx)
     costs = {
         "Cr1": 1.0, "Cr2": 0.0, "Cf_leak": 1.0, "Cf_burst": 1.0,
-        "total_insp_cost": 0.025, "pipe_length_km": 1.0, "rate": 0.0,
+        "inspection_cost_per_km": 0.025, "pipe_length_km": 1.0, "rate": 0.0,
     }
     sim = {
         "dS": 2, "m": 3, "Di": DI,

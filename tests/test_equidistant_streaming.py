@@ -34,7 +34,7 @@ def _inputs():
         "Cr2": 0.05,
         "Cf_leak": 2.0,
         "Cf_burst": 20.0,
-        "total_insp_cost": 0.015,
+        "inspection_cost_per_km": 0.015,
         "pipe_length_km": 1.0,
         "rate": 0.04,
     }
@@ -91,6 +91,27 @@ class EquidistantStreamingTests(unittest.TestCase):
                 [0.74, 15.6],
                 1.0,
             )
+
+    def test_inspection_cost_is_charged_per_km_for_each_ili(self):
+        joints, costs, simulation = _inputs()
+        costs["inspection_cost_per_km"] = 0.01
+        costs["pipe_length_km"] = 10.0
+        costs["rate"] = 0.0
+        result = run_flexible_equidistant_simulation(
+            2,
+            1,
+            4,
+            joints,
+            costs,
+            simulation,
+            [0.74, 15.6],
+            1.0,
+            property_seed=7,
+            simulation_seed=17,
+            track_debug=False,
+        )
+
+        self.assertAlmostEqual(float(np.sum(result[9])), 0.10)
 
     def test_inspection_times_must_be_on_the_simulation_grid(self):
         joints, costs, simulation = _inputs()

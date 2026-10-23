@@ -692,7 +692,7 @@ def _simulate_one_realization(
             and np.any(np.isclose(inspection_times, time_value))
         ):
             inspection_cost[time_index] = (
-                costs["total_insp_cost"]
+                model.ili_inspection_event_cost(costs)
                 / (1 + costs["rate"]) ** time_value
             )
 
