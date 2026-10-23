@@ -8,11 +8,14 @@ import copy
 import io
 from pathlib import Path
 
+import folium
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from folium.plugins import Draw
 from packaging.version import Version
+from streamlit_folium import st_folium
 
 from Simp_Sys_Thresh_J3_optimized import (
     DEFAULT_PROPERTY_SPECS,
@@ -33,6 +36,12 @@ from planning_analysis import (
     format_optional_decimal,
     select_lowest_cost_result,
     select_optimal_result,
+)
+from pipeline_map import (
+    haversine_distance_km,
+    latest_route_from_drawings,
+    map_cracks_to_joint_table,
+    marker_points_from_drawings,
 )
 
 
@@ -88,6 +97,40 @@ SAMPLE_DATA = pd.DataFrame(
         }
     ],
     columns=SAMPLE_COLUMNS,
+)
+
+TABLE_INPUT_MODE = "Joint table or CSV"
+MAP_INPUT_MODE = "Interactive pipeline map"
+MAP_SAMPLE_ROUTE = [
+    [53.5350, -113.5850],
+    [53.5480, -113.5350],
+    [53.5570, -113.4800],
+    [53.5670, -113.4300],
+]
+MAP_SAMPLE_CRACKS = pd.DataFrame(
+    [
+        {
+            "crack_id": "C-001",
+            "latitude": 53.5420,
+            "longitude": -113.5580,
+            "depth_mm": 3.5,
+            "length_mm": 42.0,
+        },
+        {
+            "crack_id": "C-002",
+            "latitude": 53.5530,
+            "longitude": -113.5050,
+            "depth_mm": 5.1,
+            "length_mm": 68.0,
+        },
+        {
+            "crack_id": "C-003",
+            "latitude": 53.5625,
+            "longitude": -113.4550,
+            "depth_mm": 2.7,
+            "length_mm": 31.0,
+        },
+    ]
 )
 
 
@@ -237,6 +280,290 @@ def table_to_joints(table, growth, default_birth_rate, extra_crack_free):
     if not joints:
         raise ValueError("Provide at least one joint or one crack-free joint group.")
     return joints
+
+
+def render_pipeline_map_input():
+    """Render the GIS input and return a simulation-ready joint table."""
+    route_key = "inspection_map_route"
+    cracks_key = "inspection_map_cracks"
+    revision_key = "inspection_map_revision"
+    if route_key not in st.session_state:
+        st.session_state[route_key] = copy.deepcopy(MAP_SAMPLE_ROUTE)
+    if cracks_key not in st.session_state:
+        st.session_state[cracks_key] = MAP_SAMPLE_CRACKS.to_dict("records")
+    if revision_key not in st.session_state:
+        st.session_state[revision_key] = 0
+
+    st.markdown(
+        '<div class="note"><b>Map workflow:</b> draw the pipeline centreline, set the '
+        'nominal joint length, and place crack markers. The app snaps each marker to '
+        'the route, calculates its chainage, assigns it to a physical joint, and groups '
+        'all remaining crack-free joints efficiently.</div>',
+        unsafe_allow_html=True,
+    )
+
+    action_1, action_2, action_3 = st.columns([1, 1, 2])
+    if action_1.button("Load Edmonton sample", width="stretch"):
+        st.session_state[route_key] = copy.deepcopy(MAP_SAMPLE_ROUTE)
+        st.session_state[cracks_key] = MAP_SAMPLE_CRACKS.to_dict("records")
+        st.session_state[revision_key] += 1
+        st.rerun()
+    if action_2.button("Clear map input", width="stretch"):
+        st.session_state[route_key] = []
+        st.session_state[cracks_key] = []
+        st.session_state[revision_key] += 1
+        st.rerun()
+    action_3.caption(
+        "The Edmonton example is synthetic and does not represent an operating pipeline."
+    )
+
+    setting_1, setting_2, setting_3, setting_4 = st.columns(4)
+    with setting_1:
+        joint_length_m = st.number_input(
+            "Nominal pipe-joint length (m)",
+            min_value=1.0,
+            max_value=100.0,
+            value=12.0,
+            step=1.0,
+            help=(
+                "Used to divide the mapped route into physical joints. Replace the "
+                "demonstration value with construction or asset data when available."
+            ),
+        )
+    with setting_2:
+        new_depth_mm = st.number_input(
+            "Depth for the next marker (mm)",
+            min_value=0.01,
+            max_value=100.0,
+            value=1.0,
+            step=0.1,
+        )
+    with setting_3:
+        new_length_mm = st.number_input(
+            "Length for the next marker (mm)",
+            min_value=0.1,
+            max_value=5000.0,
+            value=40.0,
+            step=1.0,
+        )
+    with setting_4:
+        snap_warning_m = st.number_input(
+            "Warn when marker offset exceeds (m)",
+            min_value=1.0,
+            max_value=5000.0,
+            value=100.0,
+            step=10.0,
+        )
+
+    crack_columns = ["crack_id", "latitude", "longitude", "depth_mm", "length_mm"]
+    crack_table = pd.DataFrame(st.session_state[cracks_key])
+    for column in crack_columns:
+        if column not in crack_table.columns:
+            crack_table[column] = pd.Series(dtype="float64" if column != "crack_id" else "object")
+    crack_table = crack_table[crack_columns]
+    st.caption(
+        "Use the marker tool on the map to add a crack, or enter coordinates directly. "
+        "Depth and length remain editable here."
+    )
+    edited_cracks = st.data_editor(
+        crack_table,
+        num_rows="dynamic",
+        width="stretch",
+        hide_index=True,
+        key=f"pipeline_crack_editor_{st.session_state[revision_key]}",
+        column_config={
+            "crack_id": st.column_config.TextColumn("Crack ID"),
+            "latitude": st.column_config.NumberColumn("Latitude", format="%.6f"),
+            "longitude": st.column_config.NumberColumn("Longitude", format="%.6f"),
+            "depth_mm": st.column_config.NumberColumn(
+                "Crack depth (mm)", min_value=0.01, format="%.2f"
+            ),
+            "length_mm": st.column_config.NumberColumn(
+                "Crack length (mm)", min_value=0.1, format="%.2f"
+            ),
+        },
+    )
+    edited_cracks = edited_cracks.dropna(how="all").reset_index(drop=True)
+    st.session_state[cracks_key] = edited_cracks.to_dict("records")
+
+    route = st.session_state[route_key]
+    model_defaults = {
+        "WT_mean": SAMPLE_DATA.iloc[0]["WT_mean"],
+        "WT_std": SAMPLE_DATA.iloc[0]["WT_std"],
+        "Pservice_mean": SAMPLE_DATA.iloc[0]["Pservice_mean"],
+        "Pservice_std": SAMPLE_DATA.iloc[0]["Pservice_std"],
+        "birth_rate": np.nan,
+    }
+    model_table = pd.DataFrame()
+    located_cracks = pd.DataFrame()
+    map_summary = None
+    transform_error = None
+    try:
+        model_table, located_cracks, map_summary = map_cracks_to_joint_table(
+            route,
+            edited_cracks,
+            joint_length_m=float(joint_length_m),
+            default_row_values=model_defaults,
+        )
+    except ValueError as exc:
+        transform_error = str(exc)
+
+    if route:
+        map_center = [
+            sum(point[0] for point in route) / len(route),
+            sum(point[1] for point in route) / len(route),
+        ]
+    else:
+        map_center = [53.5461, -113.4938]
+    pipeline_map = folium.Map(
+        location=map_center,
+        zoom_start=11,
+        tiles=None,
+        control_scale=True,
+    )
+    folium.TileLayer("OpenStreetMap", name="Street map", control=True).add_to(
+        pipeline_map
+    )
+    folium.TileLayer(
+        tiles=(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/"
+            "World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        ),
+        attr="Esri World Imagery",
+        name="Satellite",
+        control=True,
+    ).add_to(pipeline_map)
+
+    if len(route) >= 2:
+        folium.PolyLine(
+            route,
+            color="#16a6a1",
+            weight=6,
+            opacity=0.95,
+            tooltip="Pipeline centreline",
+        ).add_to(pipeline_map)
+        folium.Marker(
+            route[0], tooltip="Pipeline start", icon=folium.Icon(color="green")
+        ).add_to(pipeline_map)
+        folium.Marker(
+            route[-1], tooltip="Pipeline end", icon=folium.Icon(color="blue")
+        ).add_to(pipeline_map)
+        pipeline_map.fit_bounds(route, padding=(25, 25))
+
+    if not located_cracks.empty:
+        for crack in located_cracks.itertuples(index=False):
+            marker_color = "#d4493f" if crack.depth_mm >= 5 else "#d98b22"
+            folium.CircleMarker(
+                location=[crack.snapped_latitude, crack.snapped_longitude],
+                radius=7 + min(crack.depth_mm, 8),
+                color="white",
+                weight=2,
+                fill=True,
+                fill_color=marker_color,
+                fill_opacity=0.95,
+                tooltip=f"{crack.crack_id} — {crack.joint_id}",
+                popup=folium.Popup(
+                    (
+                        f"<b>{crack.crack_id}</b><br>"
+                        f"{crack.joint_id}<br>"
+                        f"Chainage: {crack.chainage_km:.3f} km<br>"
+                        f"Depth: {crack.depth_mm:.2f} mm<br>"
+                        f"Length: {crack.length_mm:.2f} mm<br>"
+                        f"Snap offset: {crack.map_offset_m:.1f} m"
+                    ),
+                    max_width=260,
+                ),
+            ).add_to(pipeline_map)
+
+    Draw(
+        export=False,
+        draw_options={
+            "polyline": {"shapeOptions": {"color": "#16a6a1", "weight": 6}},
+            "marker": True,
+            "polygon": False,
+            "rectangle": False,
+            "circle": False,
+            "circlemarker": False,
+        },
+        edit_options={"edit": False, "remove": True},
+    ).add_to(pipeline_map)
+    folium.LayerControl(collapsed=False).add_to(pipeline_map)
+    map_result = st_folium(
+        pipeline_map,
+        height=590,
+        use_container_width=True,
+        returned_objects=["all_drawings"],
+        key=f"inspection_pipeline_map_{st.session_state[revision_key]}",
+    )
+
+    drawings = map_result.get("all_drawings") or []
+    new_route = latest_route_from_drawings(drawings)
+    new_points = marker_points_from_drawings(drawings)
+    map_changed = False
+    if new_route and new_route != route:
+        st.session_state[route_key] = new_route
+        map_changed = True
+
+    existing_points = []
+    for record in st.session_state[cracks_key]:
+        try:
+            existing_points.append(
+                [float(record["latitude"]), float(record["longitude"])]
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    for point in new_points:
+        already_present = any(
+            haversine_distance_km(point, existing) * 1000 < 0.5
+            for existing in existing_points
+        )
+        if already_present:
+            continue
+        crack_number = len(st.session_state[cracks_key]) + 1
+        st.session_state[cracks_key].append(
+            {
+                "crack_id": f"C-{crack_number:03d}",
+                "latitude": point[0],
+                "longitude": point[1],
+                "depth_mm": float(new_depth_mm),
+                "length_mm": float(new_length_mm),
+            }
+        )
+        existing_points.append(point)
+        map_changed = True
+
+    if map_changed:
+        st.session_state[revision_key] += 1
+        st.rerun()
+
+    if transform_error:
+        st.error(transform_error)
+        return model_table, located_cracks, map_summary
+
+    metric_columns = st.columns(5)
+    metric_columns[0].metric(
+        "Mapped length", f"{map_summary['pipeline_length_km']:.2f} km"
+    )
+    metric_columns[1].metric("Physical joints", f"{map_summary['total_joints']:,}")
+    metric_columns[2].metric("Cracked joints", f"{map_summary['cracked_joints']:,}")
+    metric_columns[3].metric("Initial cracks", f"{map_summary['initial_cracks']:,}")
+    maximum_offset = (
+        float(located_cracks["map_offset_m"].max()) if not located_cracks.empty else 0.0
+    )
+    metric_columns[4].metric("Maximum snap offset", f"{maximum_offset:.1f} m")
+    if maximum_offset > snap_warning_m:
+        st.warning(
+            "At least one crack marker is farther from the pipeline than the selected "
+            "offset limit. Check its position before running the analysis."
+        )
+
+    with st.expander("Map-to-joints transformation", expanded=True):
+        st.caption(
+            "Cracks on the same physical joint are combined in one model row. "
+            "All other physical joints are represented by one counted crack-free group."
+        )
+        st.dataframe(model_table, width="stretch", hide_index=True)
+    return model_table, located_cracks, map_summary
 
 
 def unpack_result(raw, interval, decision_mode, sim_params):
@@ -669,10 +996,31 @@ st.markdown(
 with st.sidebar:
     st.header("Analysis settings")
 
+    joint_input_method = st.radio(
+        "Pipeline and crack input",
+        options=[TABLE_INPUT_MODE, MAP_INPUT_MODE],
+        help=(
+            "Use the existing table/CSV workflow, or draw a pipeline and place "
+            "cracks on an interactive map."
+        ),
+    )
+
     with st.expander("Simulation settings", expanded=True):
         samples = st.number_input("Monte Carlo samples", 100, 10000, 1000, 100)
         horizon = st.number_input("Analysis horizon (years)", 5, 100, 30, 5)
-        pipe_length = st.number_input("Pipe length (km)", 0.001, 10000.0, 1.0, 0.1)
+        manual_pipe_length = st.number_input(
+            "Pipe length (km)",
+            0.001,
+            10000.0,
+            1.0,
+            0.1,
+            disabled=joint_input_method == MAP_INPUT_MODE,
+            help=(
+                "In map mode, the app calculates this value from the drawn "
+                "pipeline centreline."
+            ),
+        )
+        pipe_length = manual_pipe_length
         random_seed = st.number_input("Random seed", 0, 1000000, 0, 1)
 
     with st.expander("Pipeline class and safety criteria", expanded=True):
@@ -757,9 +1105,11 @@ with st.sidebar:
     with st.expander("Initial cracks and crack initiation"):
         extra_crack_free = st.number_input(
             "Additional crack-free joints", 0, 10000, 0, 1,
+            disabled=joint_input_method == MAP_INPUT_MODE,
             help=(
                 "These statistically identical joints are evaluated as one "
-                "efficient group."
+                "efficient group. In map mode, this count is calculated from "
+                "the route length and nominal joint length."
             ),
         )
         initial_length_std = st.number_input(
@@ -889,15 +1239,66 @@ with st.sidebar:
         burst_cost = st.number_input("Burst failure cost", 0.001, 10000.0, 20.0, 1.0)
         discount_percent = st.number_input("Discount rate (%)", 0.0, 100.0, 4.0, 0.5)
 
-st.subheader("1. Define pipe joints and initial cracks")
-st.markdown(
-    '<div class="note">Use one row per joint. Separate multiple crack means with '
-    'semicolons—for example, <b>40; 45</b>. A blank size list is required when '
-    '<b>num_cracks = 0</b>. The <b>count</b> column can represent identical joints efficiently. '
-    'Leave <b>birth_rate</b> blank to use the sidebar value, or enter a rate to override it '
-    'for that joint or group.</div>',
-    unsafe_allow_html=True,
-)
+if joint_input_method == MAP_INPUT_MODE:
+    st.subheader("1. Map the pipeline and its initial cracks")
+    edited_table, mapped_cracks, map_summary = render_pipeline_map_input()
+    model_extra_crack_free = 0
+    if map_summary is not None:
+        pipe_length = float(map_summary["pipeline_length_km"])
+        st.caption(
+            f"The scheduling model will use the mapped pipeline length: {pipe_length:.3f} km."
+        )
+else:
+    st.subheader("1. Define pipe joints and initial cracks")
+    st.markdown(
+        '<div class="note">Use one row per joint. Separate multiple crack means with '
+        'semicolons—for example, <b>40; 45</b>. A blank size list is required when '
+        '<b>num_cracks = 0</b>. The <b>count</b> column can represent identical joints efficiently. '
+        'Leave <b>birth_rate</b> blank to use the sidebar value, or enter a rate to override it '
+        'for that joint or group.</div>',
+        unsafe_allow_html=True,
+    )
+
+    sample_csv = SAMPLE_DATA.to_csv(index=False).encode("utf-8")
+    left, right = st.columns([1, 1])
+    with left:
+        uploaded = st.file_uploader("Upload joint/crack CSV", type="csv")
+    with right:
+        st.download_button(
+            "Download example CSV", sample_csv, "sample_joints.csv", "text/csv"
+        )
+
+    try:
+        if uploaded is None:
+            source_table = SAMPLE_DATA.copy()
+            editor_key = "joint_editor_default"
+        else:
+            raw_bytes = uploaded.getvalue()
+            source_table = pd.read_csv(io.BytesIO(raw_bytes))
+            editor_key = f"joint_editor_{uploaded.name}_{len(raw_bytes)}"
+        edited_table = st.data_editor(
+            source_table,
+            num_rows="dynamic",
+            width="stretch",
+            hide_index=True,
+            key=editor_key,
+            column_config={
+                "birth_rate": st.column_config.NumberColumn(
+                    "birth_rate (cracks/joint-year)",
+                    help=(
+                        "Optional joint-specific crack birth rate. Leave blank to use "
+                        "the sidebar value."
+                    ),
+                    min_value=0.0,
+                    format="%.6f",
+                ),
+            },
+        )
+    except Exception as exc:
+        st.error(f"The CSV could not be read: {exc}")
+        st.stop()
+    model_extra_crack_free = extra_crack_free
+
 st.markdown(
     '<div class="note"><b>Prior method:</b> at each candidate interval, joints '
     'known to contain initial cracks are excavated and treated with perfect '
@@ -905,43 +1306,6 @@ st.markdown(
     'ILI detection and measured crack sizes determine whether treatment occurs.</div>',
     unsafe_allow_html=True,
 )
-
-sample_csv = SAMPLE_DATA.to_csv(index=False).encode("utf-8")
-left, right = st.columns([1, 1])
-with left:
-    uploaded = st.file_uploader("Upload joint/crack CSV", type="csv")
-with right:
-    st.download_button("Download example CSV", sample_csv, "sample_joints.csv", "text/csv")
-
-try:
-    if uploaded is None:
-        source_table = SAMPLE_DATA.copy()
-        editor_key = "joint_editor_default"
-    else:
-        raw_bytes = uploaded.getvalue()
-        source_table = pd.read_csv(io.BytesIO(raw_bytes))
-        editor_key = f"joint_editor_{uploaded.name}_{len(raw_bytes)}"
-    edited_table = st.data_editor(
-        source_table,
-        num_rows="dynamic",
-        width="stretch",
-        hide_index=True,
-        key=editor_key,
-        column_config={
-            "birth_rate": st.column_config.NumberColumn(
-                "birth_rate (cracks/joint-year)",
-                help=(
-                    "Optional joint-specific crack birth rate. Leave blank to use the "
-                    "sidebar value."
-                ),
-                min_value=0.0,
-                format="%.6f",
-            ),
-        },
-    )
-except Exception as exc:
-    st.error(f"The CSV could not be read: {exc}")
-    st.stop()
 
 prior_intervals = (
     list(
@@ -973,7 +1337,7 @@ growth_properties = {
 
 try:
     joints = table_to_joints(
-        edited_table, growth_properties, default_birth_rate, extra_crack_free
+        edited_table, growth_properties, default_birth_rate, model_extra_crack_free
     )
     total_joints = sum(joint["count"] for joint in joints)
     total_initial_cracks = sum(

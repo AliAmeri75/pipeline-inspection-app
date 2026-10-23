@@ -72,6 +72,27 @@ The choice to include both dimensions is supported by a field UT-ILI study
 reporting that SCC detection increases with maximum depth and longest
 interacting length: [Lu, Skow, and Keane (2014)](https://www.cfertech.com/2014/09/29/assessing-the-probability-of-detecting-crack-features-using-ultrasonic-in-line-inspection-tool-run-results-and-excavation-data/).
 
+## Interactive pipeline map
+
+Select **Interactive pipeline map** under **Pipeline and crack input** to use a
+mapped route instead of entering the pipe length manually. The map provides
+street and satellite layers and tools for drawing a pipeline centreline and
+placing crack markers.
+
+For each marker, the app:
+
+1. snaps the selected point to the nearest route segment;
+2. calculates its distance along the pipeline (chainage);
+3. assigns it to a physical joint using the user-entered nominal joint length;
+4. combines multiple cracks that fall on the same joint; and
+5. represents all remaining crack-free joints as one counted group.
+
+The mapped length automatically replaces the manual `pipe_length_km` value in
+the cost and risk model. The included Edmonton route and defects are synthetic
+demonstration data, not an operating pipeline alignment.
+
+![Interactive map-to-joints input](docs/map-input-preview.jpg)
+
 ## Edit the introduction page
 
 - Edit `content/ABSTRACT.md` to change the short abstract.
@@ -80,7 +101,8 @@ interacting length: [Lu, Skow, and Keane (2014)](https://www.cfertech.com/2014/0
 
 The scheduling interface remains in `inspection_planner.py`; the shared
 simulation logic is in `Simp_Sys_Thresh_J3_optimized.py`, and the pure
-optimization/VoI helpers are in `planning_analysis.py`. The small
+optimization/VoI helpers are in `planning_analysis.py`. The GIS geometry and
+map-to-joints transformer are in `pipeline_map.py`. The small
 `streamlit_app.py` file only configures navigation, so the Streamlit Community
 Cloud entry point remains unchanged.
 
