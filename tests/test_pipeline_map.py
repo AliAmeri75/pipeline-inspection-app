@@ -4,6 +4,7 @@ import pytest
 from pipeline_map import (
     chainage_to_joint_number,
     map_cracks_to_joint_table,
+    point_at_chainage,
     route_length_km,
     snap_point_to_route,
 )
@@ -21,6 +22,24 @@ def test_route_length_and_snap_chainage():
 
 def test_endpoint_is_assigned_to_last_joint():
     assert chainage_to_joint_number(0.120, joint_length_m=12, total_joints=10) == 10
+
+
+def test_point_at_chainage_places_crack_on_route():
+    route = [[53.5, -113.5], [53.5, -113.4], [53.5, -113.3]]
+    total_length = route_length_km(route)
+
+    midpoint = point_at_chainage(route, total_length / 2)
+
+    assert midpoint[0] == pytest.approx(53.5)
+    assert midpoint[1] == pytest.approx(-113.4, abs=1e-5)
+    assert point_at_chainage(route, 0) == pytest.approx(route[0])
+    assert point_at_chainage(route, total_length) == pytest.approx(route[-1])
+
+
+def test_point_at_chainage_rejects_distance_beyond_route():
+    route = [[53.5, -113.5], [53.5, -113.4]]
+    with pytest.raises(ValueError, match="between 0"):
+        point_at_chainage(route, route_length_km(route) + 0.1)
 
 
 def test_map_transform_groups_cracks_and_crack_free_joints():

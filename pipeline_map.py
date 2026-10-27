@@ -52,6 +52,45 @@ def route_length_km(route: Sequence[Sequence[float]]) -> float:
     )
 
 
+def point_at_chainage(
+    route: Sequence[Sequence[float]], chainage_km: float
+) -> tuple[float, float]:
+    """Return the latitude/longitude at a distance along the route.
+
+    Chainage is measured from the first point of the pipeline centreline. This
+    lets a user place a crack exactly on the mapped line without having to know
+    its latitude and longitude.
+    """
+    if len(route) < 2:
+        raise ValueError("Draw a pipeline route with at least two points first.")
+    if not math.isfinite(chainage_km):
+        raise ValueError("Crack distance from the pipeline start must be finite.")
+
+    points = [_point(point) for point in route]
+    total_length_km = route_length_km(points)
+    if total_length_km <= 0:
+        raise ValueError("The pipeline route cannot contain only repeated points.")
+    if chainage_km < 0 or chainage_km > total_length_km:
+        raise ValueError(
+            f"Crack distance must be between 0 and {total_length_km:.3f} km."
+        )
+
+    distance_remaining = chainage_km
+    for start, end in zip(points[:-1], points[1:]):
+        segment_km = haversine_distance_km(start, end)
+        if segment_km == 0:
+            continue
+        if distance_remaining <= segment_km:
+            fraction = distance_remaining / segment_km
+            return (
+                start[0] + fraction * (end[0] - start[0]),
+                start[1] + fraction * (end[1] - start[1]),
+            )
+        distance_remaining -= segment_km
+
+    return points[-1]
+
+
 def snap_point_to_route(
     point: Sequence[float], route: Sequence[Sequence[float]]
 ) -> dict[str, object]:

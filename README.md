@@ -79,6 +79,21 @@ mapped route instead of entering the pipe length manually. The map provides
 street and satellite layers and tools for drawing a pipeline centreline and
 placing crack markers.
 
+Use either of these methods to locate a crack:
+
+- **Click on the map:** enter the next crack depth and length, select the map's
+  marker tool, and click on or near the pipeline. The app snaps the marker to
+  the closest point on the centreline.
+- **Enter distance from pipeline start:** enter the crack chainage in
+  kilometres and select **Add crack at this distance**. The app places the
+  crack exactly on the route at that distance.
+
+The green map marker defines chainage `0 km`; the blue marker is the pipeline
+end. The **Crack locations on the pipeline** table reports every crack's
+distance from the start, assigned joint, depth, length, and original click
+offset. Coordinates remain available in a separate advanced editor but are not
+required for normal use.
+
 For each marker, the app:
 
 1. snaps the selected point to the nearest route segment;

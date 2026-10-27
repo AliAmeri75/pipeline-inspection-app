@@ -42,6 +42,8 @@ from pipeline_map import (
     latest_route_from_drawings,
     map_cracks_to_joint_table,
     marker_points_from_drawings,
+    point_at_chainage,
+    route_length_km,
 )
 
 
@@ -295,10 +297,14 @@ def render_pipeline_map_input():
         st.session_state[revision_key] = 0
 
     st.markdown(
-        '<div class="note"><b>Map workflow:</b> draw the pipeline centreline, set the '
-        'nominal joint length, and place crack markers. The app snaps each marker to '
-        'the route, calculates its chainage, assigns it to a physical joint, and groups '
-        'all remaining crack-free joints efficiently.</div>',
+        '<div class="note"><b>How to use the map</b><br>'
+        '<b>1.</b> Draw the pipeline with the line tool: click the start and bend points, '
+        'then double-click to finish.<br>'
+        '<b>2.</b> Enter the depth and length of the next crack.<br>'
+        '<b>3.</b> Either select the marker tool and click on or near the pipeline, or '
+        'enter the crack distance from the pipeline start.<br>'
+        '<b>4.</b> The app places the crack on the line, calculates its distance '
+        '(chainage), and assigns it to a pipe joint automatically.</div>',
         unsafe_allow_html=True,
     )
 
@@ -332,7 +338,7 @@ def render_pipeline_map_input():
         )
     with setting_2:
         new_depth_mm = st.number_input(
-            "Depth for the next marker (mm)",
+            "New crack depth (mm)",
             min_value=0.01,
             max_value=100.0,
             value=1.0,
@@ -340,7 +346,7 @@ def render_pipeline_map_input():
         )
     with setting_3:
         new_length_mm = st.number_input(
-            "Length for the next marker (mm)",
+            "New crack length (mm)",
             min_value=0.1,
             max_value=5000.0,
             value=40.0,
@@ -355,38 +361,104 @@ def render_pipeline_map_input():
             step=10.0,
         )
 
+    route = st.session_state[route_key]
+    mapped_length_km = route_length_km(route) if len(route) >= 2 else 0.0
+
+    st.markdown("#### Choose the crack location")
+    location_method = st.radio(
+        "How would you like to position the next crack?",
+        options=["Click on the map", "Enter distance from pipeline start"],
+        horizontal=True,
+        help=(
+            "A clicked marker is snapped to the nearest point on the pipeline. "
+            "Distance from start places the crack exactly at the entered chainage."
+        ),
+    )
+    if location_method == "Click on the map":
+        st.info(
+            "Below the map, select the pin-shaped marker tool and click on or near "
+            "the pipeline. The orange/red crack marker will appear on the pipeline "
+            "after the map refreshes."
+        )
+    elif mapped_length_km > 0:
+        chainage_1, chainage_2 = st.columns([2, 1])
+        with chainage_1:
+            new_chainage_km = st.number_input(
+                "Crack distance from pipeline start (km)",
+                min_value=0.0,
+                max_value=float(mapped_length_km),
+                value=float(min(mapped_length_km / 2, mapped_length_km)),
+                step=float(max(0.001, min(0.1, mapped_length_km / 20))),
+                format="%.3f",
+                help=(
+                    f"The current pipeline runs from 0.000 to "
+                    f"{mapped_length_km:.3f} km."
+                ),
+            )
+        with chainage_2:
+            st.write("")
+            st.write("")
+            add_at_chainage = st.button(
+                "Add crack at this distance", width="stretch", type="primary"
+            )
+        if add_at_chainage:
+            latitude, longitude = point_at_chainage(route, float(new_chainage_km))
+            existing_ids = {
+                str(record.get("crack_id", ""))
+                for record in st.session_state[cracks_key]
+            }
+            crack_number = 1
+            while f"C-{crack_number:03d}" in existing_ids:
+                crack_number += 1
+            st.session_state[cracks_key].append(
+                {
+                    "crack_id": f"C-{crack_number:03d}",
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "depth_mm": float(new_depth_mm),
+                    "length_mm": float(new_length_mm),
+                }
+            )
+            st.session_state[revision_key] += 1
+            st.rerun()
+    else:
+        st.warning(
+            "Draw a pipeline centreline first. The distance-based crack option will "
+            "be enabled after the route is created."
+        )
+
     crack_columns = ["crack_id", "latitude", "longitude", "depth_mm", "length_mm"]
     crack_table = pd.DataFrame(st.session_state[cracks_key])
     for column in crack_columns:
         if column not in crack_table.columns:
             crack_table[column] = pd.Series(dtype="float64" if column != "crack_id" else "object")
     crack_table = crack_table[crack_columns]
-    st.caption(
-        "Use the marker tool on the map to add a crack, or enter coordinates directly. "
-        "Depth and length remain editable here."
-    )
-    edited_cracks = st.data_editor(
-        crack_table,
-        num_rows="dynamic",
-        width="stretch",
-        hide_index=True,
-        key=f"pipeline_crack_editor_{st.session_state[revision_key]}",
-        column_config={
-            "crack_id": st.column_config.TextColumn("Crack ID"),
-            "latitude": st.column_config.NumberColumn("Latitude", format="%.6f"),
-            "longitude": st.column_config.NumberColumn("Longitude", format="%.6f"),
-            "depth_mm": st.column_config.NumberColumn(
-                "Crack depth (mm)", min_value=0.01, format="%.2f"
-            ),
-            "length_mm": st.column_config.NumberColumn(
-                "Crack length (mm)", min_value=0.1, format="%.2f"
-            ),
-        },
-    )
+    with st.expander("Review or manually edit crack data"):
+        st.caption(
+            "You normally do not need to enter coordinates. Use this table only to "
+            "edit crack sizes, correct coordinates, or delete a crack row."
+        )
+        edited_cracks = st.data_editor(
+            crack_table,
+            num_rows="dynamic",
+            width="stretch",
+            hide_index=True,
+            key=f"pipeline_crack_editor_{st.session_state[revision_key]}",
+            column_config={
+                "crack_id": st.column_config.TextColumn("Crack ID"),
+                "latitude": st.column_config.NumberColumn("Latitude", format="%.6f"),
+                "longitude": st.column_config.NumberColumn("Longitude", format="%.6f"),
+                "depth_mm": st.column_config.NumberColumn(
+                    "Crack depth (mm)", min_value=0.01, format="%.2f"
+                ),
+                "length_mm": st.column_config.NumberColumn(
+                    "Crack length (mm)", min_value=0.1, format="%.2f"
+                ),
+            },
+        )
     edited_cracks = edited_cracks.dropna(how="all").reset_index(drop=True)
     st.session_state[cracks_key] = edited_cracks.to_dict("records")
 
-    route = st.session_state[route_key]
     model_defaults = {
         "WT_mean": SAMPLE_DATA.iloc[0]["WT_mean"],
         "WT_std": SAMPLE_DATA.iloc[0]["WT_std"],
@@ -415,6 +487,12 @@ def render_pipeline_map_input():
         ]
     else:
         map_center = [53.5461, -113.4938]
+    st.markdown("#### Draw the pipeline and place crack markers")
+    st.caption(
+        "Line tool: draw or replace the pipeline. Marker tool: add one crack using "
+        "the depth and length entered above. Green is the start (0 km), blue is the "
+        "end, and orange/red circles are cracks. Click a crack circle for details."
+    )
     pipeline_map = folium.Map(
         location=map_center,
         zoom_start=11,
@@ -443,10 +521,14 @@ def render_pipeline_map_input():
             tooltip="Pipeline centreline",
         ).add_to(pipeline_map)
         folium.Marker(
-            route[0], tooltip="Pipeline start", icon=folium.Icon(color="green")
+            route[0],
+            tooltip="Pipeline start — 0.000 km",
+            icon=folium.Icon(color="green"),
         ).add_to(pipeline_map)
         folium.Marker(
-            route[-1], tooltip="Pipeline end", icon=folium.Icon(color="blue")
+            route[-1],
+            tooltip=f"Pipeline end — {mapped_length_km:.3f} km",
+            icon=folium.Icon(color="blue"),
         ).add_to(pipeline_map)
         pipeline_map.fit_bounds(route, padding=(25, 25))
 
@@ -519,7 +601,13 @@ def render_pipeline_map_input():
         )
         if already_present:
             continue
-        crack_number = len(st.session_state[cracks_key]) + 1
+        existing_ids = {
+            str(record.get("crack_id", ""))
+            for record in st.session_state[cracks_key]
+        }
+        crack_number = 1
+        while f"C-{crack_number:03d}" in existing_ids:
+            crack_number += 1
         st.session_state[cracks_key].append(
             {
                 "crack_id": f"C-{crack_number:03d}",
@@ -557,7 +645,39 @@ def render_pipeline_map_input():
             "offset limit. Check its position before running the analysis."
         )
 
-    with st.expander("Map-to-joints transformation", expanded=True):
+    with st.expander("Crack locations on the pipeline", expanded=True):
+        if located_cracks.empty:
+            st.info("No cracks have been placed yet.")
+        else:
+            st.caption(
+                "Chainage is the distance from the green pipeline-start marker. "
+                "The joint number is calculated from chainage and nominal joint length."
+            )
+            st.dataframe(
+                located_cracks[
+                    [
+                        "crack_id",
+                        "chainage_km",
+                        "joint_id",
+                        "depth_mm",
+                        "length_mm",
+                        "map_offset_m",
+                    ]
+                ].rename(
+                    columns={
+                        "crack_id": "Crack ID",
+                        "chainage_km": "Distance from start (km)",
+                        "joint_id": "Assigned joint",
+                        "depth_mm": "Depth (mm)",
+                        "length_mm": "Length (mm)",
+                        "map_offset_m": "Original click offset (m)",
+                    }
+                ),
+                width="stretch",
+                hide_index=True,
+            )
+
+    with st.expander("Map-to-joints transformation"):
         st.caption(
             "Cracks on the same physical joint are combined in one model row. "
             "All other physical joints are represented by one counted crack-free group."
