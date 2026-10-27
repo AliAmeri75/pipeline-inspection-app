@@ -102,6 +102,12 @@ For each marker, the app:
 4. combines multiple cracks that fall on the same joint; and
 5. represents all remaining crack-free joints as one counted group.
 
+Joint boundaries are measured from the green pipeline-start marker. With a
+12 m nominal joint length, chainages from 0 to less than 12 m belong to Joint 1,
+12 to less than 24 m belong to Joint 2, and so on. Multiple cracks inside one
+of these joint segments remain separate cracks but are evaluated together in a
+single physical-joint model row.
+
 The mapped length automatically replaces the manual `pipe_length_km` value in
 the cost and risk model. The included Edmonton route and defects are synthetic
 demonstration data, not an operating pipeline alignment.

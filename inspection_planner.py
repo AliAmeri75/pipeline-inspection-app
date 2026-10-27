@@ -651,7 +651,9 @@ def render_pipeline_map_input():
         else:
             st.caption(
                 "Chainage is the distance from the green pipeline-start marker. "
-                "The joint number is calculated from chainage and nominal joint length."
+                "The joint number is calculated from chainage and nominal joint length. "
+                f"All cracks assigned to the same {joint_length_m:g} m joint are "
+                "modelled together as one pipe joint, not as separate joints."
             )
             st.dataframe(
                 located_cracks[
@@ -679,7 +681,8 @@ def render_pipeline_map_input():
 
     with st.expander("Map-to-joints transformation"):
         st.caption(
-            "Cracks on the same physical joint are combined in one model row. "
+            "Cracks on the same physical joint are combined in one model row; its "
+            "num_cracks value and semicolon-separated crack sizes retain every crack. "
             "All other physical joints are represented by one counted crack-free group."
         )
         st.dataframe(model_table, width="stretch", hide_index=True)

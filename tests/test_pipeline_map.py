@@ -86,6 +86,37 @@ def test_map_transform_groups_cracks_and_crack_free_joints():
     assert located["joint_id"].nunique() == 2
 
 
+def test_multiple_cracks_in_same_twelve_metre_joint_are_grouped():
+    route = [[53.5, -113.5], [53.5, -113.3]]
+    chainages_km = [0.003, 0.009, 0.013]
+    cracks = pd.DataFrame(
+        [
+            {
+                "crack_id": f"C-{index}",
+                "latitude": point_at_chainage(route, chainage)[0],
+                "longitude": point_at_chainage(route, chainage)[1],
+                "depth_mm": float(index),
+                "length_mm": 20.0 + index,
+            }
+            for index, chainage in enumerate(chainages_km, start=1)
+        ]
+    )
+
+    table, located, summary = map_cracks_to_joint_table(
+        route, cracks, joint_length_m=12
+    )
+
+    cracked_rows = table[table["num_cracks"] > 0].reset_index(drop=True)
+    assert summary["cracked_joints"] == 2
+    assert cracked_rows["joint_id"].tolist() == ["Joint 00001", "Joint 00002"]
+    assert cracked_rows["num_cracks"].tolist() == [2, 1]
+    assert located["joint_id"].tolist() == [
+        "Joint 00001",
+        "Joint 00001",
+        "Joint 00002",
+    ]
+
+
 def test_transform_rejects_non_positive_crack_size():
     cracks = pd.DataFrame(
         [{"latitude": 53.5, "longitude": -113.4, "depth_mm": 0, "length_mm": 20}]
