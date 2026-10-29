@@ -16,11 +16,25 @@ distributions. Review model assumptions before running the study.
 After a mapped analysis, expand **Pipeline joint risk profile** and select the
 planning method and interval. Red indicates a local indicator above a selected
 limit, yellow indicates 50–100%, and green indicates below 50%. The 50% boundary
-is a visualization convention. Local indicators are peak annual conditional
-failure probabilities normalized by each physical joint's length in km, matching
-the system model's conditional-increment convention. The full-pipeline safety
-decision remains in the scheduling results. These colours do not include spatial
-consequences, and therefore do not constitute quantitative location-specific risk.
+is a visualization convention. Overlapping 1 km windows advance by one nominal
+joint, with a final window ending at the route endpoint. Window cumulative Pf is
+`1 - product(1 - joint cumulative Pf)` for each year, using the simulation's
+independent-joint assumption. Annual conditional increments are then calculated
+from each window's curve; joint maxima from different years are never combined.
+The largest annual value is compared with the selected project limits.
+
+An intersected boundary joint is included in full, conservatively, because
+within-joint failure locations are unknown. Thus the joint coverage may slightly
+exceed 1 km. Routes shorter than 1 km use the actual short section without
+extrapolation. Each mapped joint inherits the worst category of all windows
+overlapping it. The critical-window table gives the precise evaluated start/end
+positions, leakage/burst probabilities and their peak years.
+
+This is a selected assessment method, not a verified CSA compliance implementation.
+The full-pipeline scheduling safety calculation and optimum selection still use
+the existing whole-route calculation. The map may therefore flag a critical
+local section even when the whole-route average passes. These colours do not
+include spatial consequences and are not quantitative consequence-based risk.
 
 Joints without initial cracks share the simulated crack-free group distribution;
 they are not forced green, because crack birth is included. A zero Monte Carlo

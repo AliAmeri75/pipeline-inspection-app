@@ -17,7 +17,7 @@ import streamlit as st
 from folium.plugins import Draw
 from packaging.version import Version
 from streamlit_folium import st_folium
-from joint_risk_map import alberta_demo, joint_reliability_table, reliability_map
+from joint_risk_map import alberta_demo, sliding_window_reliability, reliability_map
 
 from Simp_Sys_Thresh_J3_optimized import (
     DEFAULT_PROPERTY_SPECS,
@@ -1691,16 +1691,24 @@ if study:
             selected = st.selectbox('Map interval (years)', intervals,
                 index=intervals.index(preferred['interval']) if preferred else 0)
             result = next(r for r in candidates if r['interval'] == selected)
-            spatial = joint_reliability_table(result, study['map_route'], study['mapped_cracks'],
+            windows, spatial = sliding_window_reliability(result, study['map_route'], study['mapped_cracks'],
                                              study['map_summary']['joint_length_m'])
             st.caption('Red: above a selected limit. Yellow: 50–100% of a limit. Green: below 50%. '
-                       'Colours use peak annual conditional failure probability per km over the analysis horizon. '
-                       'These are local reliability indicators, not consequence-based risk or the whole-pipeline safety decision. '
-                       'No recorded crack does not guarantee low risk: new crack initiation is included. '
-                       'The 50% warning boundary is a display choice, not a regulatory criterion.')
+                       'A 1 km window slides by one joint along the route, including a final window ending at the route end. '
+                       'Joint probabilities are combined within each window for each year using independent-joint survival products. '
+                       'Each pipe section takes the colour of the worst overlapping window over the analysis horizon. '
+                       'Boundary joints are included in full conservatively. Routes shorter than 1 km use their actual length. '
+                       'These are reliability indicators; consequences are not included. The 50% warning boundary is a display choice. '
+                       'Limits are the selected project criteria; CSA sliding-window compliance has not been verified. '
+                       'The scheduling recommendation still uses the existing whole-route safety calculation.')
             st_folium(reliability_map(study['map_route'], spatial), height=500,
                       width=1100, returned_objects=[], key=f'result_risk_{method}_{selected}')
-            st.dataframe(spatial, hide_index=True)
+            st.markdown('**Critical sliding sections — highest limit ratio first**')
+            st.dataframe(windows.sort_values('limit_ratio', ascending=False), hide_index=True)
+            st.download_button('Download sliding 1 km results CSV', windows.to_csv(index=False),
+                               'sliding_1km_results.csv', 'text/csv')
+            with st.expander('Individual joint colours and critical windows'):
+                st.dataframe(spatial, hide_index=True)
             st.download_button('Download joint risk profile CSV', spatial.to_csv(index=False),
                                'joint_risk_profile.csv', 'text/csv')
     st.caption(
