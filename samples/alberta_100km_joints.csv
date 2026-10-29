@@ -1,0 +1,12 @@
+joint_id,count,num_cracks,mean_lengths_mm,mean_depths_mm,crack_ids,chainages_km
+Joint 00167,1,2,20; 40,0.6; 1,DEMO-001; DEMO-002,2.0010; 2.0020
+Joint 00675,1,1,80,2,DEMO-003,8.1000
+Joint 01275,1,1,140,3.5,DEMO-004,15.3000
+Joint 02000,1,1,200,4.5,DEMO-005,24.0000
+Joint 03176,1,1,60,1.5,DEMO-006,38.1000
+Joint 04267,1,1,20,0.6,DEMO-007,51.2000
+Joint 05201,1,2,40; 80,1; 2,DEMO-008; DEMO-009,62.4010; 62.4030
+Joint 06350,1,1,140,3.5,DEMO-010,76.2000
+Joint 07401,1,1,200,4.5,DEMO-011,88.8000
+Joint 08009,1,1,60,1.5,DEMO-012,96.1000
+Remaining crack-free joints,8324,0,,,,

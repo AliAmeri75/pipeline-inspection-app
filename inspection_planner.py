@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import io
+import json
 from pathlib import Path
 
 import folium
@@ -16,6 +17,7 @@ import streamlit as st
 from folium.plugins import Draw
 from packaging.version import Version
 from streamlit_folium import st_folium
+from joint_risk_map import alberta_demo, joint_reliability_table, reliability_map
 
 from Simp_Sys_Thresh_J3_optimized import (
     DEFAULT_PROPERTY_SPECS,
@@ -322,6 +324,44 @@ def render_pipeline_map_input():
     action_3.caption(
         "The Edmonton example is synthetic and does not represent an operating pipeline."
     )
+    demo_route, demo_cracks = alberta_demo()
+    if st.button("Load 100 km Alberta demo"):
+        st.session_state[route_key] = demo_route
+        st.session_state[cracks_key] = demo_cracks.to_dict('records')
+        st.session_state[revision_key] += 1
+        st.rerun()
+    st.caption("Sample data: fictional 100 km route with bends, west of Edmonton; not an actual pipeline survey.")
+    st.download_button("Download demo crack CSV", demo_cracks.to_csv(index=False),
+                       "alberta_100km_cracks.csv", "text/csv")
+    demo_geojson = json.dumps({'type': 'LineString', 'coordinates': [[lon, lat] for lat, lon in demo_route]})
+    st.download_button("Download demo route GeoJSON", demo_geojson,
+                       "alberta_100km_route.geojson", "application/geo+json")
+    route_upload = st.file_uploader("Upload pipeline route GeoJSON (LineString)", type=['geojson', 'json'])
+    if route_upload is not None:
+        try:
+            document = json.loads(route_upload.getvalue())
+            geometry = document.get('geometry', document)
+            if geometry.get('type') != 'LineString':
+                raise ValueError('Use a GeoJSON LineString or a Feature containing one.')
+            uploaded_route = [[float(lat), float(lon)] for lon, lat in geometry['coordinates']]
+            if route_length_km(uploaded_route) <= 0:
+                raise ValueError('The route must have a positive length.')
+            if st.button('Apply uploaded route'):
+                st.session_state[route_key] = uploaded_route
+                st.session_state[revision_key] += 1
+                st.rerun()
+        except (ValueError, KeyError, TypeError) as exc:
+            st.error(str(exc))
+    crack_upload = st.file_uploader('Upload mapped crack CSV (latitude, longitude, depth_mm, length_mm)', type='csv')
+    if crack_upload is not None and st.button('Apply uploaded cracks'):
+        try:
+            uploaded_cracks = pd.read_csv(crack_upload)
+            map_cracks_to_joint_table(st.session_state[route_key], uploaded_cracks, 12.)
+            st.session_state[cracks_key] = uploaded_cracks.to_dict('records')
+            st.session_state[revision_key] += 1
+            st.rerun()
+        except (ValueError, KeyError, TypeError) as exc:
+            st.error(str(exc))
 
     setting_1, setting_2, setting_3, setting_4 = st.columns(4)
     with setting_1:
@@ -1607,6 +1647,9 @@ if st.button(
             "interval_signature": current_interval_signature,
             "prior_intervals": prior_intervals,
             "ili_intervals": ili_intervals,
+            "map_route": copy.deepcopy(st.session_state.get('inspection_map_route')) if joint_input_method == MAP_INPUT_MODE else None,
+            "mapped_cracks": mapped_cracks.copy() if joint_input_method == MAP_INPUT_MODE else None,
+            "map_summary": copy.deepcopy(map_summary) if joint_input_method == MAP_INPUT_MODE else None,
         }
     except Exception as exc:
         st.exception(exc)
@@ -1639,6 +1682,27 @@ if study:
     )
 
     st.subheader("Cost-optimal and safe scheduling results")
+    if study.get('map_route') and study.get('map_summary'):
+        with st.expander('Pipeline joint risk profile', expanded=True):
+            method = st.radio('Map planning method', ['Prior excavation', 'ILI-informed'], horizontal=True)
+            candidates = prior_results if method == 'Prior excavation' else ili_results
+            preferred = prior_safe if method == 'Prior excavation' else ili_safe
+            intervals = [r['interval'] for r in candidates]
+            selected = st.selectbox('Map interval (years)', intervals,
+                index=intervals.index(preferred['interval']) if preferred else 0)
+            result = next(r for r in candidates if r['interval'] == selected)
+            spatial = joint_reliability_table(result, study['map_route'], study['mapped_cracks'],
+                                             study['map_summary']['joint_length_m'])
+            st.caption('Red: above a selected limit. Yellow: 50–100% of a limit. Green: below 50%. '
+                       'Colours use peak annual conditional failure probability per km over the analysis horizon. '
+                       'These are local reliability indicators, not consequence-based risk or the whole-pipeline safety decision. '
+                       'No recorded crack does not guarantee low risk: new crack initiation is included. '
+                       'The 50% warning boundary is a display choice, not a regulatory criterion.')
+            st_folium(reliability_map(study['map_route'], spatial), height=500,
+                      width=1100, returned_objects=[], key=f'result_risk_{method}_{selected}')
+            st.dataframe(spatial, hide_index=True)
+            st.download_button('Download joint risk profile CSV', spatial.to_csv(index=False),
+                               'joint_risk_profile.csv', 'text/csv')
     st.caption(
         f"{study['pipeline_class']} safety criteria: "
         f"PfL ≤ {study['max_annual_leak_pof']:.1e}; "
